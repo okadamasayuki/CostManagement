@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import { BigButton, Btn, Check, Modal, NoteBox, RCol, RGroup } from '../ui';
 import { loadFromDirectory, loadFromFiles, isMacroFormat } from '../../excel/loader';
 import { supportsDirectoryPicker } from '../../excel/fsTypes';
-import { applyRename, saveAllAsZip, saveOne, writeBackToDisk } from '../../excel/saver';
+import { applyRename, downloadBlob, saveAllAsZip, saveOne, writeBackToDisk } from '../../excel/saver';
+import { OFFLINE_FILE_NAME, getSelfCopy, isHosted } from '../../security/selfCopy';
 import {
   addBooks,
   clearBusy,
@@ -128,6 +129,24 @@ export function FilePanel() {
   const macroBooks = s.books.filter((b) => isMacroFormat(b.fileName));
   const renamedCount = Object.keys(s.renames).length;
 
+  /**
+   * このツール自身 (単一 HTML) をダウンロードする。
+   * メモリー上の DOM から作るので、通信は一切発生しない。
+   */
+  function saveToolItself() {
+    const html = getSelfCopy();
+    if (!html) {
+      toast('error', 'ツールの保存に失敗しました', 'お手数ですがブラウザーの「名前を付けて保存」をご利用ください。');
+      return;
+    }
+    downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), OFFLINE_FILE_NAME);
+    toast(
+      'success',
+      'ツール本体を保存しました',
+      '共有フォルダーに置けば、以降はネットワークに接続しなくても使えます。',
+    );
+  }
+
   return (
     <>
       <input
@@ -223,6 +242,34 @@ export function FilePanel() {
               <span className="legend-chip unlocked" />
               <span>ロック解除 (入力できる)</span>
             </div>
+          </div>
+        </RCol>
+      </RGroup>
+
+      <RGroup title="オフライン利用">
+        <BigButton
+          icon="⬇️"
+          label={<>ツール本体を<br />保存</>}
+          primary={isHosted()}
+          title="このツール (単一 HTML ファイル) をダウンロードします。通信は発生しません。"
+          onClick={saveToolItself}
+        />
+        <RCol>
+          <div style={{ width: 210 }}>
+            <NoteBox kind={isHosted() ? 'warn' : 'ok'}>
+              {isHosted() ? (
+                <>
+                  現在は<b>サーバーから開いています</b>。
+                  左のボタンで本体を保存し、共有フォルダーなどに置いてお使いください。
+                  以降はネットワーク接続なしで動きます。
+                </>
+              ) : (
+                <>
+                  <b>✓ ローカルのファイルから起動しています。</b>
+                  ネットワークには一切接続していません。
+                </>
+              )}
+            </NoteBox>
           </div>
         </RCol>
       </RGroup>

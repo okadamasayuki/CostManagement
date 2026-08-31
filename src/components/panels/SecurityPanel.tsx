@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NoteBox, RCol, RGroup } from '../ui';
 import { getBlockedAttempts, onBlockedAttempt, type BlockedAttempt } from '../../security/networkGuard';
+import { isHosted } from '../../security/selfCopy';
 
 /**
  * 社内利用時の説明用パネル。
@@ -29,6 +30,27 @@ export function SecurityPanel() {
                   <b>{blocked.length} 件の通信を遮断しました。</b>
                   <br />
                   下の一覧を確認してください。
+                </>
+              )}
+            </NoteBox>
+          </div>
+          <div style={{ width: 300, marginTop: 8 }}>
+            <NoteBox kind={isHosted() ? 'warn' : 'ok'}>
+              {isHosted() ? (
+                <>
+                  <b>起動元: サーバー ({location.host})</b>
+                  <br />
+                  ページ自体はこのサーバーから読み込まれています。
+                  Excel の中身が送信されることはありませんが、
+                  社内規程で外部サイトの利用が制限されている場合は、
+                  「ファイル」タブの<b>「ツール本体を保存」</b>で
+                  ダウンロードして共有フォルダーからお使いください。
+                </>
+              ) : (
+                <>
+                  <b>起動元: ローカルファイル</b>
+                  <br />
+                  サーバーを経由していません。ネットワークから完全に切り離された状態です。
                 </>
               )}
             </NoteBox>

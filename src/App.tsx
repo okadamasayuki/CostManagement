@@ -11,6 +11,7 @@ import { BusyOverlay, Toasts } from './components/Toasts';
 import { Btn, Modal, NoteBox } from './components/ui';
 import { buildSheetView } from './excel/view';
 import { getBlockedAttempts, onBlockedAttempt } from './security/networkGuard';
+import { isHosted } from './security/selfCopy';
 import { currentBook, currentSheet, setState, touch, useStore } from './state/store';
 
 export default function App() {
@@ -67,7 +68,11 @@ export default function App() {
           type="button"
           title="外部通信の状況を表示"
         >
-          {blockedCount === 0 ? '🔒 完全オフライン動作' : `⚠️ 通信を ${blockedCount} 件遮断`}
+          {blockedCount > 0
+            ? `⚠️ 通信を ${blockedCount} 件遮断`
+            : isHosted()
+              ? '🔒 データは外部に出ません'
+              : '🔒 完全オフライン動作'}
         </button>
         <button className="offline-badge" onClick={() => setShowAbout(true)} type="button">
           ？ 使い方

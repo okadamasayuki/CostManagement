@@ -10,7 +10,8 @@
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
 
@@ -40,8 +41,14 @@ function assert(cond, msg) {
 const requests = [];
 const consoleErrors = [];
 
+// この開発コンテナには Chromium が同梱されている。
+// CI など無い環境では Playwright が用意したものを使う。
+const CONTAINER_CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const executablePath =
+  process.env.CHROMIUM_PATH ?? (existsSync(CONTAINER_CHROMIUM) ? CONTAINER_CHROMIUM : undefined);
+
 const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  executablePath,
   args: [
     '--no-sandbox',
     '--disable-dev-shm-usage',
@@ -329,6 +336,48 @@ await check('ZIP で保存でき、中身が更新後の Excel になってい�
   assert(operated === 1, `シート保護が保存されたブックが ${operated} 冊`);
 });
 
+console.log('\n\x1b[1mオフライン利用 (ツール本体の保存)\x1b[0m');
+
+await check('ツール本体を保存でき、それ単体で動く', async () => {
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  const before = requests.length;
+  const dl = page.waitForEvent('download', { timeout: 15000 });
+  await page.click('.rbtn-lg:has-text("ツール本体を")');
+  const download = await dl;
+  const savedPath = join(root, '.test-build', 'self-copy.html');
+  await download.saveAs(savedPath);
+
+  // 保存自体がメモリー上の DOM から作られ、通信を伴わないこと
+  assert(requests.length === before, 'ツール保存で通信が発生している');
+
+  const html = readFileSync(savedPath, 'utf8');
+  assert(html.startsWith('<!doctype html>'), 'DOCTYPE がない');
+  assert(html.includes("connect-src 'none'"), 'CSP が失われている');
+
+  // 保存したファイルを別のページとして開き、実際に動くか確かめる
+  const fresh = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const freshRequests = [];
+  fresh.on('request', (r) => {
+    if (!r.url().startsWith('file://')) freshRequests.push(r.url());
+  });
+  const freshErrors = [];
+  fresh.on('pageerror', (e) => freshErrors.push(e.message));
+  await fresh.goto(`file://${savedPath}`);
+  await fresh.waitForSelector('.app', { timeout: 15000 });
+
+  // 保存直後の状態 (ファイル未読み込み) で開けること
+  assert(await fresh.isVisible('.grid-placeholder'), '保存したファイルが初期状態で開かない');
+
+  // 保存したファイルでも Excel が読めること
+  await fresh.setInputFiles('input[webkitdirectory]', SAMPLE);
+  await fresh.waitForSelector('.cell', { timeout: 20000 });
+  const text = await fresh.textContent('.grid-canvas');
+  assert(text.includes('原価管理表'), '保存したファイルで Excel を読み込めない');
+  assert(freshErrors.length === 0, `保存したファイルで JS エラー: ${freshErrors[0]}`);
+  assert(freshRequests.length === 0, `保存したファイルが通信している: ${freshRequests[0]}`);
+  await fresh.close();
+});
+
 console.log('\n\x1b[1m外部通信の遮断\x1b[0m');
 
 await check('外部へのリクエストが 1 件も発生していない', () => {
@@ -380,6 +429,64 @@ await check('遮断がステータスバーに表示される', async () => {
 await page.click('.ribbon-tab:has-text("セキュリティ")');
 await page.waitForTimeout(300);
 await page.screenshot({ path: join(SHOTS, '06-security.png') });
+
+// --------------------------------------------------------------------------
+// GitHub Pages のようにサーバーから配信した場合の検証。
+// ページ本体の読み込み以外に通信が発生しないことを確かめる。
+// --------------------------------------------------------------------------
+console.log('\n\x1b[1mサーバー配信時 (GitHub Pages を想定)\x1b[0m');
+
+const server = createServer((req, res) => {
+  if (req.url === '/favicon.ico') {
+    res.writeHead(404).end();
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(readFileSync(DIST));
+});
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const origin = `http://127.0.0.1:${server.address().port}`;
+
+const hostedPage = await browser.newPage({ viewport: { width: 1600, height: 950 } });
+const hostedRequests = [];
+hostedPage.on('request', (r) => hostedRequests.push(r.url()));
+const hostedErrors = [];
+hostedPage.on('pageerror', (e) => hostedErrors.push(e.message));
+await hostedPage.goto(`${origin}/`);
+await hostedPage.waitForSelector('.app');
+
+await check('サーバー配信であることが画面に表示される', async () => {
+  const badge = await hostedPage.textContent('.offline-badge');
+  assert(badge.includes('外部に出ません'), `バッジ: ${badge}`);
+  await hostedPage.click('.ribbon-tab:has-text("セキュリティ")');
+  const body = await hostedPage.textContent('.ribbon-panel');
+  assert(body.includes('起動元: サーバー'), '起動元の表示がない');
+  assert(body.includes('ツール本体を保存'), 'オフライン保存の案内がない');
+});
+
+await check('ページ本体以外に通信が発生しない', async () => {
+  const baseline = hostedRequests.length;
+  await hostedPage.click('.ribbon-tab:has-text("ファイル")');
+  await hostedPage.setInputFiles('input[webkitdirectory]', SAMPLE);
+  await hostedPage.waitForSelector('.cell', { timeout: 20000 });
+  await hostedPage.click('.ribbon-tab:has-text("年度更新")');
+  await hostedPage.click('.rbtn-lg:has-text("年度更新を")');
+  await hostedPage.waitForTimeout(1500);
+  const added = hostedRequests.slice(baseline);
+  assert(added.length === 0, `操作中に ${added.length} 件の通信: ${added.join(', ')}`);
+  // 最初の読み込みもドキュメント 1 件だけ (全て単一 HTML に同梱されているため)
+  assert(baseline === 1, `初期読み込みが ${baseline} 件 (期待: 1 件): ${hostedRequests.join(', ')}`);
+});
+
+await check('サーバー配信でも Excel を処理できる', async () => {
+  const text = await hostedPage.textContent('.grid-canvas');
+  assert(text.includes('2025年度'), '年度更新が効いていない');
+  assert(hostedErrors.length === 0, `JS エラー: ${hostedErrors[0]}`);
+});
+
+await hostedPage.screenshot({ path: join(SHOTS, '07-hosted.png') });
+await hostedPage.close();
+server.close();
 
 await check('JS エラーが出ていない', () => {
   const real = consoleErrors.filter((e) => !e.includes('外部通信ガード') && !e.includes('NetworkBlocked'));
