@@ -4,18 +4,30 @@ import { applyNumFmt, charWidthToPx, colorToArgb, pointsToPx } from './format';
 import { parseA1Range } from './cellRef';
 import {
   asRecord,
+  definedExtent,
   forEachExistingCell,
   getMerges,
   getSheetProtection,
   hasAnyStyle,
+  readColWidth,
+  readRowHeight,
 } from './exceljsCompat';
+import { EXCEL_MAX_COLS, EXCEL_MAX_ROWS, buildAxis } from './axis';
 
-/** 空のシートでも最低これだけの行/列は描画して、Excel らしい見た目を保つ */
-const MIN_ROWS = 40;
-const MIN_COLS = 20;
-/** 描画が重くなりすぎないための上限 (超過分はスクロールしても表示しない) */
-const MAX_RENDER_ROWS = 5000;
-const MAX_RENDER_COLS = 200;
+/**
+ * 画面用に保持するセル数の上限。
+ *
+ * 行・列の「番号」に上限は設けない (以前は 200 列 = GR 列で切っていた)。
+ * ただし極端に大きなシートで画面用データを作りすぎるとブラウザーが
+ * 固まるため、セルの「数」だけを上限とする。
+ * 上限に達した場合は画面表示が一部欠けるが、ロックや置換などの処理は
+ * 画面用データを使わないので、ファイル全体に対して正しく適用される。
+ */
+const MAX_VIEW_CELLS = 400_000;
+
+/** 既定のサイズ (Excel の標準に合わせる) */
+const DEFAULT_ROW_PX = 20;
+const DEFAULT_COL_PX = 72;
 
 interface Extracted {
   text: string;
@@ -99,7 +111,12 @@ export function buildSheetView(ws: ExcelJS.Worksheet, index: number): SheetView 
 
   // 値の無いセルでも、書式やロック設定を持っていれば画面に出す。
   // (「ロックを外したが空欄」のセルが、ロック済みに見えてしまうのを防ぐ)
-  forEachExistingCell(ws, MAX_RENDER_ROWS, MAX_RENDER_COLS, (cell, rowNumber, colNumber) => {
+  let truncated = false;
+  forEachExistingCell(ws, EXCEL_MAX_ROWS, EXCEL_MAX_COLS, (cell, rowNumber, colNumber) => {
+    if (cells.size >= MAX_VIEW_CELLS) {
+      truncated = true;
+      return;
+    }
     const numFmt = cell.numFmt;
     const extracted = extractCellValue(cell.value, numFmt);
     const styled = hasAnyStyle(cell);
@@ -136,8 +153,8 @@ export function buildSheetView(ws: ExcelJS.Worksheet, index: number): SheetView 
   for (const range of merges) {
     const rect = parseA1Range(range);
     if (!rect) continue;
-    for (let r = rect.top; r <= rect.bottom && r <= MAX_RENDER_ROWS; r++) {
-      for (let c = rect.left; c <= rect.right && c <= MAX_RENDER_COLS; c++) {
+    for (let r = rect.top; r <= rect.bottom; r++) {
+      for (let c = rect.left; c <= rect.right; c++) {
         const key = `${r}:${c}`;
         const existing = cells.get(key);
         if (r === rect.top && c === rect.left) {
@@ -151,34 +168,44 @@ export function buildSheetView(ws: ExcelJS.Worksheet, index: number): SheetView 
         }
       }
     }
-    maxRow = Math.max(maxRow, Math.min(rect.bottom, MAX_RENDER_ROWS));
-    maxCol = Math.max(maxCol, Math.min(rect.right, MAX_RENDER_COLS));
+    maxRow = Math.max(maxRow, rect.bottom);
+    maxCol = Math.max(maxCol, rect.right);
   }
 
   const contentBottom = maxRow;
   const contentRight = maxCol;
-  const rowCount = Math.min(Math.max(maxRow + 8, MIN_ROWS), MAX_RENDER_ROWS);
-  const colCount = Math.min(Math.max(maxCol + 3, MIN_COLS), MAX_RENDER_COLS);
 
-  const colWidths: number[] = [0];
-  for (let c = 1; c <= colCount; c++) {
-    colWidths.push(charWidthToPx(ws.getColumn(c)?.width));
+  // 個別のサイズを持つ範囲。中身のある範囲に加え、ファイル側で
+  // 幅や高さだけ指定されている行・列も拾う。
+  const extent = definedExtent(ws);
+  const measuredRows = Math.min(Math.max(maxRow, extent.rows), EXCEL_MAX_ROWS);
+  const measuredCols = Math.min(Math.max(maxCol, extent.cols), EXCEL_MAX_COLS);
+
+  const colSizes: Array<number | undefined> = [undefined];
+  for (let c = 1; c <= measuredCols; c++) {
+    const w = readColWidth(ws, c);
+    colSizes.push(w === undefined ? undefined : charWidthToPx(w));
   }
-  const rowHeights: number[] = [0];
-  for (let r = 1; r <= rowCount; r++) {
-    rowHeights.push(pointsToPx(ws.getRow(r)?.height));
+  const rowSizes: Array<number | undefined> = [undefined];
+  for (let r = 1; r <= measuredRows; r++) {
+    const h = readRowHeight(ws, r);
+    rowSizes.push(h === undefined ? undefined : pointsToPx(h));
   }
+
+  const rows = buildAxis(rowSizes, measuredRows, EXCEL_MAX_ROWS, DEFAULT_ROW_PX);
+  const cols = buildAxis(colSizes, measuredCols, EXCEL_MAX_COLS, DEFAULT_COL_PX);
 
   const sp = getSheetProtection(ws);
 
   return {
     name: ws.name,
     index,
-    rowCount,
-    colCount,
+    rowCount: EXCEL_MAX_ROWS,
+    colCount: EXCEL_MAX_COLS,
     cells,
-    colWidths,
-    rowHeights,
+    rows,
+    cols,
+    truncated,
     state: (ws.state as SheetView['state']) ?? 'visible',
     isProtected: Boolean(sp && sp.sheet !== false),
     hasPassword: Boolean(sp && (sp.hashValue || sp.password)),

@@ -7,10 +7,8 @@ import { OFFLINE_FILE_NAME, getSelfCopy, isHosted } from '../../security/selfCop
 import {
   addBooks,
   clearBusy,
-  closeAll,
   currentBook,
   getState,
-  revertBook,
   runOperation,
   setBusy,
   setState,
@@ -210,21 +208,6 @@ export function FilePanel() {
             supportsDirectoryPicker() ? void handleDirectoryPicker() : dirInput.current?.click()
           }
         />
-        <RCol>
-          <div style={{ fontSize: 10.5, color: 'var(--text-dim)', width: 178, lineHeight: 1.6 }}>
-            サブフォルダーも含めて
-            <br />
-            <b>.xlsx / .xlsm</b> をすべて読み込みます。
-            <br />
-            {supportsDirectoryPicker() ? (
-              <span style={{ color: 'var(--ok)' }}>✓ 元のフォルダーへ直接上書き保存できます</span>
-            ) : (
-              <span style={{ color: 'var(--warn)' }}>
-                ※ ZIP でのダウンロード保存になります
-              </span>
-            )}
-          </div>
-        </RCol>
       </RGroup>
 
       <RGroup title="読み込み時のロック">
@@ -323,30 +306,6 @@ export function FilePanel() {
                 </>
               )}
             </NoteBox>
-          </div>
-        </RCol>
-      </RGroup>
-
-      <RGroup title="閉じる">
-        <RCol>
-          <Btn onClick={() => book && void revertBook(book.id)} disabled={!book?.dirty}>
-            ↩ 変更を破棄して読み直す
-          </Btn>
-          <Btn
-            kind="danger"
-            onClick={() => {
-              if (s.books.some((b) => b.dirty) && !confirm('保存していない変更があります。すべて閉じますか?'))
-                return;
-              closeAll();
-              toast('info', 'すべてのブックを閉じました');
-            }}
-            disabled={!hasBooks}
-          >
-            ✕ すべて閉じる
-          </Btn>
-          <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>
-            {hasBooks ? `${s.books.length} ブック読み込み中` : '未読み込み'}
-            {renamedCount > 0 && ` / ${renamedCount} 件はファイル名を変更して保存`}
           </div>
         </RCol>
       </RGroup>

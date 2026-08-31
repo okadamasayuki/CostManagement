@@ -75,3 +75,24 @@ export function hasAnyStyle(cell: ExcelJS.Cell): boolean {
   const style = cell.style as Record<string, unknown> | undefined;
   return Boolean(style) && Object.keys(style as object).length > 0;
 }
+
+/**
+ * 行の高さを、行オブジェクトを新たに作らずに読む。
+ * getRow() は存在しない行を作ってしまい、保存ファイルに空行が増える。
+ */
+export function readRowHeight(ws: ExcelJS.Worksheet, row: number): number | undefined {
+  const rows = (ws as unknown as { _rows?: Array<{ height?: number } | undefined> })._rows;
+  return rows?.[row - 1]?.height;
+}
+
+/** 列の幅を、列オブジェクトを新たに作らずに読む */
+export function readColWidth(ws: ExcelJS.Worksheet, col: number): number | undefined {
+  const cols = (ws as unknown as { _columns?: Array<{ width?: number } | undefined> })._columns;
+  return cols?.[col - 1]?.width;
+}
+
+/** ファイル内で定義されている行数 / 列数 (実データの広がり) */
+export function definedExtent(ws: ExcelJS.Worksheet): { rows: number; cols: number } {
+  const w = ws as unknown as { _rows?: unknown[]; _columns?: unknown[] };
+  return { rows: w._rows?.length ?? 0, cols: w._columns?.length ?? 0 };
+}

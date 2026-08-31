@@ -53,7 +53,7 @@ function ContextInfo({ view }: { view: SheetView | null }) {
               <dd>{view.name}</dd>
               <dt>データ範囲</dt>
               <dd>
-                {view.rowCount.toLocaleString()} 行 × {view.colCount} 列
+                {view.contentBottom.toLocaleString()} 行 × {view.contentRight.toLocaleString()} 列
               </dd>
               <dt>値のあるセル</dt>
               <dd>{view.usedCellCount.toLocaleString()}</dd>
@@ -64,6 +64,13 @@ function ContextInfo({ view }: { view: SheetView | null }) {
               <dt>シート保護</dt>
               <dd>{view.isProtected ? (view.hasPassword ? '有効 (PW)' : '有効') : '無効'}</dd>
             </dl>
+            {view.truncated && (
+              <div className="note-box warn" style={{ marginTop: 8 }}>
+                <b>シートが大きいため、画面表示の一部を省いています。</b>
+                ロック・色・置換などの処理は画面表示を使わないので、
+                ファイル全体に対して正しく適用されます。
+              </div>
+            )}
             {!view.isProtected && view.unlockedCount > 0 && (
               <div className="note-box warn" style={{ marginTop: 8 }}>
                 <b>シート保護が無効です。</b>

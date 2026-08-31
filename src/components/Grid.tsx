@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CellView, SheetView } from '../excel/types';
 import type { RangeRect } from '../excel/cellRef';
 import { colToLetter, normalizeRect } from '../excel/cellRef';
+import { axisIndexAt, axisOffset, axisSize, axisTotal } from '../excel/axis';
 import { argbToCss, readableTextColor } from '../excel/format';
 
 /**
@@ -26,28 +27,6 @@ export interface GridProps {
   onCommitEdit(row: number, col: number, text: string): void;
 }
 
-function prefixSums(sizes: number[], count: number): number[] {
-  // offsets[i] は i 番目 (1 始まり) の開始位置。offsets[count+1] が総サイズ。
-  const offsets = new Array<number>(count + 2);
-  offsets[0] = 0;
-  offsets[1] = 0;
-  for (let i = 1; i <= count; i++) {
-    offsets[i + 1] = offsets[i] + (sizes[i] ?? 20);
-  }
-  return offsets;
-}
-
-/** offsets の中で pos を含む index (1 始まり) を二分探索する */
-function findIndexAt(offsets: number[], count: number, pos: number): number {
-  let lo = 1;
-  let hi = count;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (offsets[mid] <= pos) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo;
-}
 
 export function Grid(props: GridProps) {
   const { view, selection, anchor, showLockOverlay, readOnly } = props;
@@ -60,16 +39,12 @@ export function Grid(props: GridProps) {
   const [size, setSize] = useState({ w: 800, h: 500 });
   const [editing, setEditing] = useState<{ row: number; col: number; value: string } | null>(null);
 
-  const colOffsets = useMemo(
-    () => prefixSums(view.colWidths, view.colCount),
-    [view.colWidths, view.colCount],
-  );
-  const rowOffsets = useMemo(
-    () => prefixSums(view.rowHeights, view.rowCount),
-    [view.rowHeights, view.rowCount],
-  );
-  const totalW = colOffsets[view.colCount + 1];
-  const totalH = rowOffsets[view.rowCount + 1];
+  const totalW = useMemo(() => axisTotal(view.cols), [view.cols]);
+  const totalH = useMemo(() => axisTotal(view.rows), [view.rows]);
+  const colX = (c: number) => axisOffset(view.cols, c);
+  const rowY = (r: number) => axisOffset(view.rows, r);
+  const colW = (c: number) => axisSize(view.cols, c);
+  const rowH = (r: number) => axisSize(view.rows, r);
 
   // 表示中のシートが変わったらスクロール位置を戻す
   useEffect(() => {
@@ -110,16 +85,10 @@ export function Grid(props: GridProps) {
     });
   }, []);
 
-  const firstRow = Math.max(1, findIndexAt(rowOffsets, view.rowCount, scroll.top) - OVERSCAN);
-  const lastRow = Math.min(
-    view.rowCount,
-    findIndexAt(rowOffsets, view.rowCount, scroll.top + size.h) + OVERSCAN,
-  );
-  const firstCol = Math.max(1, findIndexAt(colOffsets, view.colCount, scroll.left) - OVERSCAN);
-  const lastCol = Math.min(
-    view.colCount,
-    findIndexAt(colOffsets, view.colCount, scroll.left + size.w) + OVERSCAN,
-  );
+  const firstRow = Math.max(1, axisIndexAt(view.rows, scroll.top) - OVERSCAN);
+  const lastRow = Math.min(view.rowCount, axisIndexAt(view.rows, scroll.top + size.h) + OVERSCAN);
+  const firstCol = Math.max(1, axisIndexAt(view.cols, scroll.left) - OVERSCAN);
+  const lastCol = Math.min(view.colCount, axisIndexAt(view.cols, scroll.left + size.w) + OVERSCAN);
 
   const select = useCallback(
     (rect: RangeRect, a: { row: number; col: number }) => props.onSelect(rect, a),
@@ -130,17 +99,25 @@ export function Grid(props: GridProps) {
     (row: number, col: number) => {
       const el = bodyRef.current;
       if (!el) return;
-      const x = colOffsets[col];
-      const w = view.colWidths[col] ?? 72;
-      const y = rowOffsets[row];
-      const h = view.rowHeights[row] ?? 20;
+      const x = colX(col);
+      const w = colW(col);
+      const y = rowY(row);
+      const h = rowH(row);
       if (x < el.scrollLeft) el.scrollLeft = x;
       else if (x + w > el.scrollLeft + el.clientWidth) el.scrollLeft = x + w - el.clientWidth;
       if (y < el.scrollTop) el.scrollTop = y;
       else if (y + h > el.scrollTop + el.clientHeight) el.scrollTop = y + h - el.clientHeight;
     },
-    [colOffsets, rowOffsets, view.colWidths, view.rowHeights],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view.rows, view.cols],
   );
+
+  // 名前ボックスなど、グリッドの外から選択位置が変わったときに追従する。
+  // シートが広いと、選んだセルが画面外のままになってしまうため。
+  useEffect(() => {
+    if (anchor) scrollIntoView(anchor.row, anchor.col);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchor?.row, anchor?.col]);
 
   // --- マウス操作 ---------------------------------------------------------
 
@@ -152,12 +129,9 @@ export function Grid(props: GridProps) {
       const x = e.clientX - rect.left + el.scrollLeft;
       const y = e.clientY - rect.top + el.scrollTop;
       if (x < 0 || y < 0 || x > totalW || y > totalH) return null;
-      return {
-        row: findIndexAt(rowOffsets, view.rowCount, y),
-        col: findIndexAt(colOffsets, view.colCount, x),
-      };
+      return { row: axisIndexAt(view.rows, y), col: axisIndexAt(view.cols, x) };
     },
-    [colOffsets, rowOffsets, totalH, totalW, view.colCount, view.rowCount],
+    [totalH, totalW, view.rows, view.cols],
   );
 
   const onMouseDown = (e: React.MouseEvent) => {
@@ -282,18 +256,18 @@ export function Grid(props: GridProps) {
 
   const cells: React.ReactNode[] = [];
   for (let r = firstRow; r <= lastRow; r++) {
-    const y = rowOffsets[r];
-    const h = view.rowHeights[r] ?? 20;
+    const y = rowY(r);
+    const h = rowH(r);
     for (let c = firstCol; c <= lastCol; c++) {
       const key = `${r}:${c}`;
       const cv = view.cells.get(key);
       if (cv?.mergedHidden) continue;
-      const x = colOffsets[c];
-      let w = view.colWidths[c] ?? 72;
+      const x = colX(c);
+      let w = colW(c);
       let hh = h;
       if (cv?.mergeSpan) {
-        w = colOffsets[Math.min(c + cv.mergeSpan.cols, view.colCount + 1)] - x;
-        hh = rowOffsets[Math.min(r + cv.mergeSpan.rows, view.rowCount + 1)] - y;
+        w = colX(Math.min(c + cv.mergeSpan.cols, view.colCount + 1)) - x;
+        hh = rowY(Math.min(r + cv.mergeSpan.rows, view.rowCount + 1)) - y;
       }
       cells.push(
         <CellBox
@@ -321,7 +295,7 @@ export function Grid(props: GridProps) {
       <div
         key={c}
         className={`colhead${sel ? ' sel' : ''}`}
-        style={{ left: colOffsets[c], width: view.colWidths[c] ?? 72, height: COL_HEADER_H, top: 0 }}
+        style={{ left: colX(c), width: colW(c), height: COL_HEADER_H, top: 0 }}
         onMouseDown={() => {
           const rect = { top: 1, bottom: view.rowCount, left: c, right: c };
           select(rect, { row: 1, col: c });
@@ -339,7 +313,7 @@ export function Grid(props: GridProps) {
       <div
         key={r}
         className={`rowhead${sel ? ' sel' : ''}`}
-        style={{ top: rowOffsets[r], height: view.rowHeights[r] ?? 20, width: ROW_HEADER_W, left: 0 }}
+        style={{ top: rowY(r), height: rowH(r), width: ROW_HEADER_W, left: 0 }}
         onMouseDown={() => {
           const rect = { top: r, bottom: r, left: 1, right: view.colCount };
           select(rect, { row: r, col: 1 });
@@ -352,21 +326,19 @@ export function Grid(props: GridProps) {
 
   const selBox = selection
     ? {
-        left: colOffsets[selection.left],
-        top: rowOffsets[selection.top],
-        width:
-          colOffsets[Math.min(selection.right + 1, view.colCount + 1)] - colOffsets[selection.left],
-        height:
-          rowOffsets[Math.min(selection.bottom + 1, view.rowCount + 1)] - rowOffsets[selection.top],
+        left: colX(selection.left),
+        top: rowY(selection.top),
+        width: colX(Math.min(selection.right + 1, view.colCount + 1)) - colX(selection.left),
+        height: rowY(Math.min(selection.bottom + 1, view.rowCount + 1)) - rowY(selection.top),
       }
     : null;
 
   const editBox = editing
     ? {
-        left: colOffsets[editing.col],
-        top: rowOffsets[editing.row],
-        width: view.colWidths[editing.col] ?? 72,
-        height: view.rowHeights[editing.row] ?? 20,
+        left: colX(editing.col),
+        top: rowY(editing.row),
+        width: colW(editing.col),
+        height: rowH(editing.row),
       }
     : null;
 
@@ -452,7 +424,7 @@ function spillWidth(
   for (let c = col + 1; c <= view.colCount && c <= col + 20; c++) {
     const n = view.cells.get(`${row}:${c}`);
     if (n && (n.text || n.mergedHidden)) break;
-    w += view.colWidths[c] ?? 72;
+    w += axisSize(view.cols, c);
   }
   return w;
 }

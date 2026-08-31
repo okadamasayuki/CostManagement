@@ -3,7 +3,7 @@ import type { LoadedWorkbook, OpDetail, OpResult, OpScope } from './types';
 import type { RangeSpec, RecipeStep, SheetProtectOptions, StepBody } from '../recipe/types';
 import type { RangeRect } from './cellRef';
 import { colToLetter, parseA1Range, rectToA1 } from './cellRef';
-import { asRecord, asStyle, getSheetProtection } from './exceljsCompat';
+import { asRecord, asStyle, forEachExistingCell, getSheetProtection } from './exceljsCompat';
 import { resolveColor, type FillRef } from './color';
 import { isUnderFolder } from './folders';
 import {
@@ -207,21 +207,43 @@ function setFill(cell: ExcelJS.Cell, argb: string | null): boolean {
   return true;
 }
 
-/** rect 内の全セルを走査する。上限を超えた場合は打ち切って false を返す。 */
+/**
+ * rect 内のセルを走査する。
+ *
+ * 範囲が現実的な大きさなら、空白のセルも含めて全ての座標を見る
+ * (空欄のロックを外す、といった操作のために必要)。
+ *
+ * 一方、離れた場所にぽつんとデータがあるシート (例: 6000 行目や ZZ 列に
+ * 少しだけ値がある) では、範囲の面積が数百万セルに達してしまう。
+ * その場合は「実際に存在するセルだけ」を走査する。面積ではなく
+ * 実データ量に比例するので、どんなに広いシートでも処理できる。
+ *
+ * @returns 全ての座標を見たなら true、実在するセルだけを見たなら false
+ */
 function forEachCell(
   ws: ExcelJS.Worksheet,
   rect: RangeRect,
   fn: (cell: ExcelJS.Cell, row: number, col: number) => void,
 ): boolean {
-  if (rectCells(rect) > MAX_CELLS_PER_SHEET) return false;
-  for (let r = rect.top; r <= rect.bottom; r++) {
-    const row = ws.getRow(r);
-    for (let c = rect.left; c <= rect.right; c++) {
-      fn(row.getCell(c), r, c);
+  if (rectCells(rect) <= MAX_CELLS_PER_SHEET) {
+    for (let r = rect.top; r <= rect.bottom; r++) {
+      const row = ws.getRow(r);
+      for (let c = rect.left; c <= rect.right; c++) {
+        fn(row.getCell(c), r, c);
+      }
     }
+    return true;
   }
-  return true;
+
+  forEachExistingCell(ws, rect.bottom, rect.right, (cell, r, c) => {
+    if (r < rect.top || c < rect.left) return;
+    fn(cell, r, c);
+  });
+  return false;
 }
+
+/** 空白セルを飛ばした場合に、結果の文言へ添える注記 */
+const SPARSE_NOTE = ' ※範囲が広いため、値も書式も無いセルは対象外';
 
 // ---------------------------------------------------------------------------
 // 各操作の実装
@@ -240,13 +262,11 @@ function opSetLock(
     count++;
     if (!dryRun) setLocked(cell, body.locked);
   });
-  if (!ok) {
-    return detail(t, `範囲が大きすぎるため処理を中止しました (${rectToA1(rect)})`, 0);
-  }
   if (count === 0) return null;
   return detail(
     t,
-    `${rectToA1(rect)} の ${count} セルを${body.locked ? 'ロック' : 'ロック解除'}`,
+    `${rectToA1(rect)} の ${count} セルを${body.locked ? 'ロック' : 'ロック解除'}` +
+      (ok ? '' : SPARSE_NOTE),
     count,
   );
 }
@@ -285,12 +305,11 @@ function opLockAllExcept(
       if (!dryRun) setLocked(cell, true);
     }
   });
-  if (!ok) return detail(t, '範囲が大きすぎるため処理を中止しました', 0);
   if (locked === 0 && unlocked === 0) return null;
   const parts: string[] = [];
   if (locked) parts.push(`${locked} セルをロック`);
   if (unlocked) parts.push(`${keep ? rectToA1(keep) : ''} の ${unlocked} セルを入力可能に`);
-  return detail(t, parts.join(' / '), locked + unlocked);
+  return detail(t, parts.join(' / ') + (ok ? '' : SPARSE_NOTE), locked + unlocked);
 }
 
 async function opProtectSheet(
@@ -352,11 +371,11 @@ function opFillRange(
     count++;
     if (!dryRun) setFill(cell, body.colorArgb);
   });
-  if (!ok) return detail(t, '範囲が大きすぎるため処理を中止しました', 0);
   if (count === 0) return null;
   return detail(
     t,
-    `${rectToA1(rect)} の ${count} セルの塗りを${body.colorArgb === null ? '解除' : '変更'}`,
+    `${rectToA1(rect)} の ${count} セルの塗りを${body.colorArgb === null ? '解除' : '変更'}` +
+      (ok ? '' : SPARSE_NOTE),
     count,
   );
 }
@@ -390,13 +409,12 @@ function opSetLockByFill(
     count++;
     if (!dryRun) setLocked(cell, body.locked);
   });
-  if (!ok) return detail(t, '範囲が大きすぎるため処理を中止しました', 0);
   if (count === 0) return null;
   return detail(
     t,
     `色が${body.match === 'in' ? '一致' : '不一致'}の ${count} セルを${
       body.locked ? 'ロック' : 'ロック解除'
-    }`,
+    }` + (ok ? '' : SPARSE_NOTE),
     count,
   );
 }
@@ -423,13 +441,12 @@ function opFillByLockState(
     count++;
     if (!dryRun) setFill(cell, body.colorArgb);
   });
-  if (!ok) return detail(t, '範囲が大きすぎるため処理を中止しました', 0);
   if (count === 0) return null;
   return detail(
     t,
     `${wantLocked ? 'ロック済み' : 'ロック解除済み'}の ${count} セルを塗り${
       body.colorArgb === null ? '解除' : '変更'
-    }`,
+    }` + (ok ? '' : SPARSE_NOTE),
     count,
   );
 }
@@ -540,7 +557,7 @@ function opReplaceYears(
   if (body.targets.values || body.targets.formulas) {
     const rect = resolveRange(t.ws, body.range);
     if (rect) {
-      const ok = forEachCell(t.ws, rect, (cell) => {
+      forEachCell(t.ws, rect, (cell) => {
         const isFormula =
           cell.value !== null &&
           typeof cell.value === 'object' &&
@@ -549,7 +566,6 @@ function opReplaceYears(
         if (!isFormula && !body.targets.values) return;
         if (rewriteCellValue(cell, rewrite, mapper, body.targets.formulas, dryRun)) cellCount++;
       });
-      if (!ok) return detail(t, '範囲が大きすぎるため処理を中止しました', 0);
     }
   }
   if (cellCount > 0) messages.push(`${cellCount} セルの年を変更`);
@@ -609,7 +625,7 @@ function opReplaceText(
   if (body.targets.values || body.targets.formulas) {
     const rect = resolveRange(t.ws, body.range);
     if (rect) {
-      const ok = forEachCell(t.ws, rect, (cell) => {
+      forEachCell(t.ws, rect, (cell) => {
         const isFormula =
           cell.value !== null &&
           typeof cell.value === 'object' &&
@@ -618,7 +634,6 @@ function opReplaceText(
         if (!isFormula && !body.targets.values) return;
         if (rewriteCellValue(cell, rewrite, noopMapper, body.targets.formulas, dryRun)) count++;
       });
-      if (!ok) return detail(t, '範囲が大きすぎるため処理を中止しました', 0);
     }
   }
   if (count) messages.push(`${count} セルを置換`);

@@ -746,6 +746,74 @@ async function main(): Promise<void> {
     assert.equal(book.dirty, false, '未変更のままのはず');
   });
 
+  await test('離れた場所にデータがある広大なシートでも処理できる', async () => {
+    // 6000 行目や ZZ 列 (702 列目) にだけ値があるシート。
+    // 範囲の面積は 400 万セルを超えるが、実データは数個しかない。
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      ws.getCell('A1').value = '2024年度';
+      ws.getCell('GS1').value = '2024年度'; // 201 列目 (以前の上限の外)
+      ws.getCell('ZZ1').value = '2024年度'; // 702 列目
+      ws.getRow(6000).getCell(1).value = '2024年度'; // 以前の行上限の外
+    });
+
+    const started = Date.now();
+    const out = await applyStep(
+      step({
+        op: 'shiftYears',
+        delta: 1,
+        minYear: 2020,
+        maxYear: 2030,
+        wholeNumberOnly: true,
+        targets: DEFAULT_YEAR_TARGETS,
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const elapsed = Date.now() - started;
+
+    assert.equal(out.changedCells, 4, `変更されたセル数: ${out.changedCells}`);
+    assert.ok(elapsed < 5000, `処理に ${elapsed}ms かかった (実データ量に比例していない)`);
+
+    const ws = (await roundTrip(book)).getWorksheet('S')!;
+    assert.equal(ws.getCell('A1').value, '2025年度');
+    assert.equal(ws.getCell('GS1').value, '2025年度', 'GR 列より右も処理されるはず');
+    assert.equal(ws.getCell('ZZ1').value, '2025年度', '702 列目も処理されるはず');
+    assert.equal(ws.getRow(6000).getCell(1).value, '2025年度', '6000 行目も処理されるはず');
+  });
+
+  await test('広大なシートでは空白セルを飛ばしたことが結果に出る', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      ws.getCell('A1').value = 'x';
+      ws.getCell('ZZ9000').value = 'y';
+    });
+    const out = await applyStep(
+      step({ op: 'setLock', range: { kind: 'sheet' }, locked: false }),
+      ctx([book]),
+    );
+    assert.ok(out.changedCells > 0, '実在するセルは処理されるはず');
+    assert.match(
+      out.details[0].message,
+      /空白セルは対象外|範囲が広いため/,
+      `注記が出ていない: ${out.details[0].message}`,
+    );
+  });
+
+  await test('通常の大きさのシートでは空白セルも対象になる', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      ws.getCell('C3').value = 'x';
+    });
+    await applyStep(
+      step({ op: 'setLock', range: { kind: 'sheet' }, locked: false }),
+      ctx([book]),
+    );
+    const ws = book.wb.getWorksheet('S')!;
+    assert.equal(isCellLocked(ws.getCell('A1')), false, '空欄の A1 も解除されるはず');
+    assert.equal(isCellLocked(ws.getCell('B2')), false, '空欄の B2 も解除されるはず');
+  });
+
   // ------------------------------------------------------------------------
   section('手順書');
 

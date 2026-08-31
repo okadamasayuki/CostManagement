@@ -19,6 +19,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(root, 'dist', 'index.html');
 const SAMPLE = join(root, '.test-build', 'sample');
 const SHOTS = join(root, '.test-build', 'shots');
+const WIDE_FILE = join(root, '.test-build', 'wide.xlsx');
 
 let passed = 0;
 const failures = [];
@@ -42,6 +43,17 @@ function assert(cond, msg) {
  * 条件が満たされるまで待つ。
  * 固定時間の待機だと CI の速度差で不安定になるため、こちらを使う。
  */
+/** ツリーの ✕ を押して、読み込んだブックを全部閉じる */
+async function closeAllBooks(page) {
+  for (let i = 0; i < 20; i++) {
+    const n = await page.locator('.tree-file').count();
+    if (n === 0) return;
+    await page.locator('.tree-file .icon-btn').first().click();
+    await new Promise((r) => setTimeout(r, 60));
+  }
+  throw new Error('ブックを閉じきれない');
+}
+
 async function waitUntil(fn, msg, timeout = 20000) {
   const deadline = Date.now() + timeout;
   let last;
@@ -144,14 +156,24 @@ await check('シートタブが 3 枚出る', async () => {
 
 await page.screenshot({ path: join(SHOTS, '01-loaded.png') });
 
+await check('「ファイル」タブから不要な項目が消えている', async () => {
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  const panel = await page.textContent('.ribbon-panel');
+  assert(!panel.includes('すべて閉じる'), '「すべて閉じる」が残っている');
+  assert(!panel.includes('変更を破棄'), '「変更を破棄して読み直す」が残っている');
+  assert(!panel.includes('サブフォルダーも含めて'), '開くの説明文が残っている');
+  assert(!panel.includes('直接上書き保存できます'), '開くの説明文が残っている');
+  // 必要な機能は残っていること
+  assert(panel.includes('フォルダーを'), 'フォルダーを開くが消えている');
+  assert(panel.includes('ZIP'), '保存が消えている');
+});
+
 console.log('\n\x1b[1m読み込み時のロック状態\x1b[0m');
 
 await check('「全シートのロックを外す」で読み込むと最初から全解除になる', async () => {
   // いったん閉じてから、設定を変えて読み込み直す
-  page.on('dialog', (d) => d.accept());
   await page.click('.ribbon-tab:has-text("ファイル")');
-  await page.click('.rbtn:has-text("すべて閉じる")');
-  await waitUntil(async () => (await page.locator('.tree-file').count()) === 0, '閉じられない');
+  await closeAllBooks(page);
 
   await page.selectOption('[data-testid="initial-lock"]', 'unlock');
   await page.setInputFiles('input[webkitdirectory]', SAMPLE);
@@ -169,11 +191,61 @@ await check('「全シートのロックを外す」で読み込むと最初か�
   );
 
   // 設定を戻して読み込み直す
-  await page.click('.rbtn:has-text("すべて閉じる")');
-  await waitUntil(async () => (await page.locator('.tree-file').count()) === 0, '閉じられない');
+  await closeAllBooks(page);
   await page.selectOption('[data-testid="initial-lock"]', 'keep');
   await page.setInputFiles('input[webkitdirectory]', SAMPLE);
   await waitUntil(async () => (await page.locator('.cell').count()) > 0, '読み込み直せない');
+});
+
+console.log('\n\x1b[1m大きなシートの読み込み\x1b[0m');
+
+await check('GR 列より右のデータも読み込める', async () => {
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await closeAllBooks(page);
+  await page.setInputFiles('input[type="file"]:not([webkitdirectory])', [WIDE_FILE]);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, '読み込めない');
+
+  // ZZ1 (702 列目) へ移動して中身を確認する
+  await page.fill('.namebox input', 'ZZ1');
+  await page.press('.namebox input', 'Enter');
+  await waitUntil(
+    async () => (await page.inputValue('.formula-input')) === '最果ての値',
+    `ZZ1 が読めない: ${await page.inputValue('.formula-input')}`,
+  );
+});
+
+await check('AMJ 列 (Excel の 1024 列目) まで移動できる', async () => {
+  await page.fill('.namebox input', 'AMJ2000');
+  await page.press('.namebox input', 'Enter');
+  await waitUntil(
+    async () => (await page.inputValue('.namebox input')) === 'AMJ2000',
+    'Excel の範囲内に移動できない',
+  );
+});
+
+await check('大きなシートでも操作がファイル全体に効く', async () => {
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  await page.selectOption('[data-testid="scope-books"]', 'all');
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
+  await page.click('.rbtn-lg:has-text("年度更新を")');
+  await waitUntil(
+    async () => (await page.locator('.toast').last().textContent()).includes('箇所'),
+    '年度更新が終わらない',
+  );
+  await page.fill('.namebox input', 'ZZ2');
+  await page.press('.namebox input', 'Enter');
+  await waitUntil(
+    async () => (await page.inputValue('.formula-input')) === '2025年度',
+    `右端の年度が更新されない: ${await page.inputValue('.formula-input')}`,
+  );
+  // 後片付け
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await closeAllBooks(page);
+  await page.setInputFiles('input[webkitdirectory]', SAMPLE);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, '読み込み直せない');
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  await page.selectOption('[data-testid="scope-books"]', 'current');
+  await page.selectOption('[data-testid="scope-sheets"]', 'current');
 });
 
 console.log('\n\x1b[1mフォルダーを指定して一括処理\x1b[0m');

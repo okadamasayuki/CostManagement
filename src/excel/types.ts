@@ -1,6 +1,7 @@
 import type ExcelJS from 'exceljs';
 import type { RangeRect } from './cellRef';
 import type { FileSystemDirectoryHandleLike } from './fsTypes';
+import type { AxisMetrics } from './axis';
 
 /**
  * 読み込んだブック 1 冊。
@@ -67,9 +68,12 @@ export interface SheetView {
   colCount: number;
   /** キーは `${row}:${col}` */
   cells: Map<string, CellView>;
-  /** 1 始まりの列番号 -> px 幅 */
-  colWidths: number[];
-  rowHeights: number[];
+  /** 行の位置とサイズ */
+  rows: AxisMetrics;
+  /** 列の位置とサイズ */
+  cols: AxisMetrics;
+  /** 画面用データが上限に達して一部省かれたか (処理自体には影響しない) */
+  truncated: boolean;
   state: 'visible' | 'hidden' | 'veryHidden';
   /** シート保護が有効か */
   isProtected: boolean;
