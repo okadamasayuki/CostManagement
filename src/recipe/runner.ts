@@ -55,6 +55,7 @@ export async function runRecipe(
           changedBooks: 0,
           details: [],
           fileRenames: [],
+          targetSheets: 0,
         },
         error: e instanceof Error ? e.message : String(e),
       });
@@ -158,10 +159,11 @@ function normalizeStep(raw: unknown, index: number): RecipeStep | null {
     note: typeof s.note === 'string' ? s.note : undefined,
     enabled: s.enabled !== false,
     scope: {
-      books: (['current', 'all', 'glob'] as const).includes(scope.books as 'all')
+      books: (['current', 'all', 'glob', 'folder'] as const).includes(scope.books as 'all')
         ? (scope.books as 'all')
         : 'all',
       bookGlob: typeof scope.bookGlob === 'string' ? scope.bookGlob : undefined,
+      bookFolder: typeof scope.bookFolder === 'string' ? scope.bookFolder : undefined,
       sheets: (['current', 'all', 'glob'] as const).includes(scope.sheets as 'all')
         ? (scope.sheets as 'all')
         : 'all',

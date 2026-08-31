@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { BigButton, Btn, Check, Field, Modal, NoteBox, RCol, RGroup } from '../ui';
 import { downloadText } from '../../excel/saver';
 import { recipeToHtml, recipeToJson, recipeToMarkdown } from '../../recipe/document';
+import { describeScope } from '../../recipe/describe';
 import { RecipeParseError, parseRecipe, runRecipe, type RunReport } from '../../recipe/runner';
 import { emptyRecipe } from '../../recipe/types';
 import {
@@ -83,10 +84,23 @@ export function RecipePanel() {
         setState({ renames, lastRunReport: r });
       }
       const failed = r.steps.filter((x) => x.error).length;
+      // 対象が 1 つも無かった手順は、フォルダー指定が今の構成に
+      // 合っていない可能性が高いので目立たせる
+      const empty = r.steps.filter((x) => !x.error && x.outcome.targetSheets === 0);
+      const notes: string[] = [];
+      if (failed) notes.push(`${failed} 手順でエラーが発生しました。`);
+      if (empty.length) {
+        notes.push(
+          `${empty.length} 手順は対象が 1 つもありませんでした` +
+            `（${empty.map((x) => x.step.label).slice(0, 3).join('、')}）。` +
+            `手順書の「適用先」が今のファイル構成と合っているか確認してください。`,
+        );
+      }
+      if (!notes.length) notes.push(`${r.steps.length} 手順を処理しました。`);
       toast(
-        failed ? 'warn' : 'success',
+        failed || empty.length ? 'warn' : 'success',
         `${dryRun ? '試算' : '実行'}完了: ${r.totalChangedCells} 箇所`,
-        failed ? `${failed} 手順でエラーが発生しました。` : `${r.steps.length} 手順を処理しました。`,
+        notes.join('\n'),
       );
     } catch (e) {
       toast('error', '手順の実行に失敗しました', e instanceof Error ? e.message : String(e));
@@ -273,8 +287,21 @@ export function RecipePanel() {
                 <tr key={r.step.id + i}>
                   <td className="num">{i + 1}</td>
                   <td>{r.step.label}</td>
-                  <td style={r.error ? { color: 'var(--error)' } : undefined}>
+                  <td
+                    style={
+                      r.error
+                        ? { color: 'var(--error)' }
+                        : r.outcome.targetSheets === 0
+                          ? { color: 'var(--warn)' }
+                          : undefined
+                    }
+                  >
                     {r.error ?? r.outcome.summary}
+                    {!r.error && r.outcome.targetSheets === 0 && (
+                      <div style={{ fontSize: 10.5 }}>
+                        適用先: {describeScope(r.step.scope)}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

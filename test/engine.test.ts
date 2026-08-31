@@ -11,6 +11,7 @@ import ExcelJS from 'exceljs';
 import assert from 'node:assert/strict';
 import { applyStep, collectUsedColors, type OpContext } from '../src/excel/ops';
 import { resolveColor } from '../src/excel/color';
+import { isUnderFolder, listFolders } from '../src/excel/folders';
 import type { LoadedWorkbook } from '../src/excel/types';
 import type { RecipeStep, StepBody } from '../src/recipe/types';
 import { DEFAULT_PROTECT_OPTIONS, DEFAULT_YEAR_TARGETS } from '../src/recipe/types';
@@ -458,6 +459,98 @@ async function main(): Promise<void> {
     );
     assert.equal(books[0].wb.getWorksheet('S')!.getCell('A1').value, '2025');
     assert.equal(books[1].wb.getWorksheet('S')!.getCell('A1').value, '2024', '対象外は変わらないはず');
+  });
+
+  await test('フォルダーを指定すると、その配下のブックだけが対象になる', async () => {
+    const mk = (id: string, relPath: string) => {
+      const b = makeBook(id, relPath.split('/').pop()!, (wb) => {
+        wb.addWorksheet('S').getCell('A1').value = '2024';
+      });
+      b.relPath = relPath;
+      return b;
+    };
+    const books = [
+      mk('b1', '原価管理/2024年度/東京/実績.xlsx'),
+      mk('b2', '原価管理/2024年度/東京/支店別/新宿.xlsx'), // 孫フォルダー
+      mk('b3', '原価管理/2024年度/大阪/実績.xlsx'),
+      mk('b4', '原価管理/共通/マスタ.xlsx'),
+    ];
+    const shift = (folder: string): RecipeStep =>
+      step(
+        {
+          op: 'shiftYears',
+          delta: 1,
+          minYear: 2020,
+          maxYear: 2030,
+          wholeNumberOnly: true,
+          targets: DEFAULT_YEAR_TARGETS,
+          range: { kind: 'used' },
+        },
+        { books: 'folder', bookFolder: folder, sheets: 'all' },
+      );
+
+    const out = await applyStep(shift('原価管理/2024年度/東京'), ctx(books));
+    assert.equal(out.targetSheets, 2, '孫フォルダーのブックも含まれるはず');
+    assert.equal(books[0].wb.getWorksheet('S')!.getCell('A1').value, '2025');
+    assert.equal(books[1].wb.getWorksheet('S')!.getCell('A1').value, '2025', '孫フォルダーも対象');
+    assert.equal(books[2].wb.getWorksheet('S')!.getCell('A1').value, '2024', '大阪は対象外');
+    assert.equal(books[3].wb.getWorksheet('S')!.getCell('A1').value, '2024', '共通は対象外');
+  });
+
+  await test('似た名前のフォルダーを取り違えない', () => {
+    // 「東京」と「東京支店」は別のフォルダー
+    assert.equal(isUnderFolder('a/東京/x.xlsx', 'a/東京'), true);
+    assert.equal(isUnderFolder('a/東京支店/x.xlsx', 'a/東京'), false, '前方一致だけで判定してはいけない');
+    assert.equal(isUnderFolder('a/東京/b/c/x.xlsx', 'a/東京'), true, '孫以下も配下');
+    assert.equal(isUnderFolder('a/x.xlsx', ''), true, '空文字は全件');
+    assert.equal(isUnderFolder('a/東京.xlsx', 'a/東京'), false, '同名のファイルは配下ではない');
+  });
+
+  await test('フォルダーの一覧に配下の件数が出る', () => {
+    const mk = (id: string, relPath: string) => {
+      const b = makeBook(id, relPath.split('/').pop()!, (wb) => wb.addWorksheet('S'));
+      b.relPath = relPath;
+      return b;
+    };
+    const folders = listFolders([
+      mk('b1', '原価/2024/東京/a.xlsx'),
+      mk('b2', '原価/2024/東京/支店/b.xlsx'),
+      mk('b3', '原価/2024/大阪/c.xlsx'),
+      mk('b4', '原価/共通/d.xlsx'),
+    ]);
+    const at = (path: string) => folders.find((f) => f.path === path);
+    assert.equal(at('')?.count, 4, '最上位は全件');
+    assert.equal(at('原価')?.count, 4);
+    assert.equal(at('原価/2024')?.count, 3, '孫以下も数えるはず');
+    assert.equal(at('原価/2024/東京')?.count, 2);
+    assert.equal(at('原価/共通')?.count, 1);
+    assert.equal(at('原価/2024/東京')?.depth, 2, '字下げ用の深さ');
+  });
+
+  await test('手順書のフォルダー指定が今の構成に合わないと分かる', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      wb.addWorksheet('S').getCell('A1').value = '2024';
+    });
+    book.relPath = '2026年度/a.xlsx';
+    const out = await applyStep(
+      step(
+        {
+          op: 'shiftYears',
+          delta: 1,
+          minYear: 2020,
+          maxYear: 2030,
+          wholeNumberOnly: true,
+          targets: DEFAULT_YEAR_TARGETS,
+          range: { kind: 'used' },
+        },
+        // 去年のフォルダー名のまま
+        { books: 'folder', bookFolder: '2025年度', sheets: 'all' },
+      ),
+      ctx([book]),
+    );
+    assert.equal(out.targetSheets, 0, '対象 0 件として分かるようになっていること');
+    assert.match(out.summary, /対象のシートがありません/);
+    assert.equal(book.wb.getWorksheet('S')!.getCell('A1').value, '2024', '何も変わらないこと');
   });
 
   await test('シート名の衝突時は改名を見送る', async () => {

@@ -144,6 +144,70 @@ await check('シートタブが 3 枚出る', async () => {
 
 await page.screenshot({ path: join(SHOTS, '01-loaded.png') });
 
+console.log('\n\x1b[1mフォルダーを指定して一括処理\x1b[0m');
+
+await check('ツリーのフォルダーから対象を指定できる', async () => {
+  const tokyo = page.locator('.tree-folder', { hasText: 'tokyo' }).first();
+  await tokyo.hover();
+  await tokyo.locator('.icon-btn').click();
+  await waitUntil(
+    async () => (await page.locator('.scope-banner').count()) > 0,
+    '対象フォルダーの表示が出ない',
+  );
+  const banner = await page.textContent('.scope-banner');
+  assert(/tokyo/.test(banner), `対象の表示が想定外: ${banner}`);
+});
+
+await check('リボンの適用先にもフォルダー指定が反映される', async () => {
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  assert(
+    (await page.inputValue('[data-testid="scope-books"]')) === 'folder',
+    '適用先がフォルダー指定になっていない',
+  );
+  const folder = await page.inputValue('[data-testid="scope-folder"]');
+  assert(folder.endsWith('tokyo'), `選ばれているフォルダー: ${folder}`);
+});
+
+await check('そのフォルダー配下のブックだけが対象になる', async () => {
+  // 実際には変更せず、試算で対象を確かめる (以降のテストに影響させないため)
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
+  await page.click('.rbtn-lg:has-text("変更内容を")');
+  await page.waitForSelector('.rp-title:has-text("試算結果")', { timeout: 15000 });
+  await waitUntil(
+    async () => (await page.locator('.detail-list li').count()) > 0,
+    '試算の内訳が出ない',
+  );
+  const where = await page.locator('.detail-list .where').allTextContents();
+  assert(where.length > 0, '内訳が空');
+  assert(
+    where.every((w) => w.includes('tokyo')),
+    `tokyo 以外が対象に入っている: ${where.join(' | ')}`,
+  );
+  // サブフォルダーを含めて 1 ブック × 3 シートが対象
+  assert(where.length === 3, `対象シート数が ${where.length}: ${where.join(' | ')}`);
+});
+
+await check('最上位を選ぶと全ブックが対象になる', async () => {
+  await page.selectOption('[data-testid="scope-folder"]', '');
+  await page.click('.rbtn-lg:has-text("変更内容を")');
+  await waitUntil(async () => {
+    const w = await page.locator('.detail-list .where').allTextContents();
+    return w.some((x) => x.includes('osaka')) && w.some((x) => x.includes('tokyo'));
+  }, '最上位を選んでも全ブックが対象にならない');
+});
+
+await check('フォルダー指定を解除して元に戻せる', async () => {
+  await page.click('.scope-banner .icon-btn');
+  await waitUntil(
+    async () => (await page.locator('.scope-banner').count()) === 0,
+    'フォルダー指定が解除されない',
+  );
+  // 以降のテストのため、適用先を既定に戻す
+  await page.selectOption('[data-testid="scope-books"]', 'current');
+  await page.selectOption('[data-testid="scope-sheets"]', 'current');
+  await page.click('.rp-title:has-text("試算結果") .icon-btn');
+});
+
 console.log('\n\x1b[1m色からロックを設定\x1b[0m');
 
 await check('使われている色の一覧が出る', async () => {

@@ -83,9 +83,15 @@ export interface SheetView {
 
 /** 操作の適用範囲 */
 export interface OpScope {
-  books: 'current' | 'all' | 'glob';
+  books: 'current' | 'all' | 'glob' | 'folder';
   /** books==='glob' のときのファイル名パターン (例: `*原価*.xlsx`) */
   bookGlob?: string;
+  /**
+   * books==='folder' のときの対象フォルダー (読み込み元からの相対パス)。
+   * そのフォルダーの配下 (孫フォルダー以下も含む) が全て対象になる。
+   * 空文字は最上位 = 全ブック。
+   */
+  bookFolder?: string;
   sheets: 'current' | 'all' | 'glob';
   /** sheets==='glob' のときのシート名パターン */
   sheetGlob?: string;

@@ -21,7 +21,11 @@ export function describeScope(scope: OpScope): string {
       ? '選択中のブック'
       : scope.books === 'all'
         ? '読み込んだすべてのブック'
-        : `ファイル名が「${scope.bookGlob || '*'}」に一致するブック`;
+        : scope.books === 'folder'
+          ? scope.bookFolder
+            ? `フォルダー「${scope.bookFolder}」配下のすべてのブック`
+            : '読み込んだすべてのブック'
+          : `ファイル名が「${scope.bookGlob || '*'}」に一致するブック`;
   const sheet =
     scope.sheets === 'current'
       ? '選択中のシート'

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import type { OpScope } from '../excel/types';
+import { listFolders } from '../excel/folders';
+import { useStore } from '../state/store';
 import type { RangeSpec } from '../recipe/types';
 import { argbToCss, cssToArgb } from '../excel/format';
 
@@ -143,6 +145,14 @@ export function ColorSwatches(props: {
 /** 操作の適用範囲 (ブック / シート) の指定 */
 export function ScopeSelector(props: { scope: OpScope; onChange(s: OpScope): void }) {
   const { scope, onChange } = props;
+  const store = useStore();
+  // 読み込んだファイルの相対パスから、実際に存在するフォルダーを出す
+  const folders = listFolders(store.books);
+  const targetCount =
+    scope.books === 'folder'
+      ? (folders.find((f) => f.path === (scope.bookFolder ?? ''))?.count ?? 0)
+      : 0;
+
   return (
     <RCol>
       <Field label="ブック">
@@ -153,9 +163,33 @@ export function ScopeSelector(props: { scope: OpScope; onChange(s: OpScope): voi
         >
           <option value="current">選択中のブックのみ</option>
           <option value="all">読み込んだ全ブック</option>
+          <option value="folder">フォルダーを指定…</option>
           <option value="glob">ファイル名で指定…</option>
         </select>
       </Field>
+      {scope.books === 'folder' && (
+        <>
+          <Field label="">
+            <select
+              data-testid="scope-folder"
+              style={{ width: 178 }}
+              value={scope.bookFolder ?? ''}
+              onChange={(e) => onChange({ ...scope, bookFolder: e.target.value })}
+            >
+              {folders.map((f) => (
+                <option key={f.path} value={f.path}>
+                  {'　'.repeat(f.depth)}
+                  {f.path ? '📁 ' : ''}
+                  {f.label} ({f.count})
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div style={{ fontSize: 10.5, color: 'var(--text-dim)', paddingLeft: 2 }}>
+            配下のサブフォルダーも含めて <b>{targetCount}</b> ブックが対象
+          </div>
+        </>
+      )}
       {scope.books === 'glob' && (
         <Field label="">
           <input

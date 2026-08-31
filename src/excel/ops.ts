@@ -5,6 +5,7 @@ import type { RangeRect } from './cellRef';
 import { colToLetter, parseA1Range, rectToA1 } from './cellRef';
 import { asRecord, asStyle, getSheetProtection } from './exceljsCompat';
 import { resolveColor, type FillRef } from './color';
+import { isUnderFolder } from './folders';
 import {
   mapNumericYear,
   pairMapper,
@@ -67,6 +68,9 @@ export function resolveTargets(ctx: OpContext, scope: OpScope): SheetTarget[] {
       books = ctx.books.filter(
         (b) => matchesGlob(b.fileName, scope.bookGlob) || matchesGlob(b.relPath, scope.bookGlob),
       );
+      break;
+    case 'folder':
+      books = ctx.books.filter((b) => isUnderFolder(b.relPath, scope.bookFolder ?? ''));
       break;
     default:
       books = [...ctx.books];
@@ -637,6 +641,12 @@ export interface FileRename {
 
 export interface StepOutcome extends OpResult {
   fileRenames: FileRename[];
+  /**
+   * 適用範囲に一致したシートの数。
+   * 0 のときは対象が 1 つも無かったということで、
+   * 手順書のフォルダー指定が今のファイル構成に合っていない可能性がある。
+   */
+  targetSheets: number;
 }
 
 export async function applyStep(
@@ -734,6 +744,7 @@ export async function applyStep(
     changedBooks,
     details,
     fileRenames,
+    targetSheets: targets.length,
   };
 }
 

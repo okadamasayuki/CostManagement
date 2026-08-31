@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { LoadedWorkbook } from '../excel/types';
 import { isMacroFormat } from '../excel/loader';
-import { closeBook, selectBook, useStore } from '../state/store';
+import { closeBook, selectBook, setState, toast, useStore } from '../state/store';
+import { isUnderFolder } from '../excel/folders';
 
 /** 相対パスからフォルダー階層のツリーを組み立てる */
 interface TreeNode {
@@ -70,16 +71,41 @@ export function FileTree() {
     const out: React.ReactNode[] = [];
     for (const folder of node.folders.values()) {
       const isCollapsed = collapsed.has(folder.path);
+      // 先頭の '/' を落として、相対パスの表記に合わせる
+      const folderPath = folder.path.replace(/^\//, '');
+      const isTarget = s.scope.books === 'folder' && (s.scope.bookFolder ?? '') === folderPath;
+      const fileCount = s.books.filter((b) => isUnderFolder(b.relPath, folderPath)).length;
       out.push(
         <div
           key={folder.path}
-          className="tree-folder"
+          className={`tree-folder${isTarget ? ' target' : ''}`}
           style={{ paddingLeft: 8 + depth * 12 }}
           onClick={() => toggle(folder.path)}
         >
           <span>{isCollapsed ? '▸' : '▾'}</span>
           <span>📁</span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{folder.name}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{folder.name}</span>
+          <button
+            className="icon-btn"
+            title={
+              isTarget
+                ? 'このフォルダーを対象にしています'
+                : `このフォルダー配下の ${fileCount} ブックを操作の対象にする`
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              setState({
+                scope: { ...s.scope, books: 'folder', bookFolder: folderPath },
+              });
+              toast(
+                'info',
+                `「${folder.name}」配下の ${fileCount} ブックを対象にしました`,
+                'ロック・色・年度更新の操作がこの範囲に適用されます。',
+              );
+            }}
+          >
+            {isTarget ? '🎯' : '⊙'}
+          </button>
         </div>,
       );
       if (!isCollapsed) out.push(...renderNode(folder, depth + 1));
@@ -127,6 +153,19 @@ export function FileTree() {
         <span className="spacer" />
         {dirty > 0 && <span className="badge dirty">未保存 {dirty}</span>}
       </div>
+      {s.scope.books === 'folder' && (
+        <div className="scope-banner" title="リボンの「適用先」で変更できます">
+          🎯 対象:{' '}
+          <b>{s.scope.bookFolder ? `${s.scope.bookFolder}/` : 'すべて'}</b>
+          <button
+            className="icon-btn"
+            title="フォルダーの指定をやめて、選択中のブックのみに戻す"
+            onClick={() => setState({ scope: { ...s.scope, books: 'current' } })}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div className="tree">{renderNode(tree, 0)}</div>
       {s.skipped.length > 0 && (
         <div
