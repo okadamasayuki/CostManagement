@@ -108,6 +108,15 @@ page.on('console', (m) => {
 });
 page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`));
 
+// 必要なサンプルが無いまま進むと Playwright が待ち続けて時間を浪費するため、
+// 最初に確かめて、無ければすぐ落とす
+for (const required of [DIST, WIDE_FILE, join(SAMPLE, 'cost_2024.xlsx')]) {
+  if (!existsSync(required)) {
+    console.error(`必要なファイルがありません: ${required}\n  npm run test:ui から実行してください。`);
+    process.exit(1);
+  }
+}
+
 mkdirSync(SHOTS, { recursive: true });
 await page.goto(`file://${DIST}`);
 await page.waitForSelector('.app');

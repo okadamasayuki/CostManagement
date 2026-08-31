@@ -84,6 +84,24 @@ async function makeWorkbook(path: string, dept: string): Promise<void> {
  */
 const ASCII = process.argv.includes('--ascii');
 
+/**
+ * GR 列 (200 列目) より右、5000 行目より下にデータがあるファイル。
+ * 「描画上限で頭打ちにならないこと」の確認に使う。
+ */
+async function makeWideWorkbook(path: string): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('広いシート');
+  ws.getCell('A1').value = '左端';
+  ws.getCell('A2').value = `${YEAR}年度`;
+  ws.getCell('GR1').value = 'GR列';
+  ws.getCell('GS1').value = 'GS列';
+  ws.getCell('ZZ1').value = '最果ての値';
+  ws.getCell('ZZ2').value = `${YEAR}年度`;
+  ws.getRow(6000).getCell(1).value = '6000行目';
+  await wb.xlsx.writeFile(path);
+  console.log(`  作成: ${path}`);
+}
+
 async function main(): Promise<void> {
   const dirs = ASCII ? ['tokyo', 'osaka'] : ['東京', '大阪'];
   for (const d of dirs) mkdirSync(join(OUT, d), { recursive: true });
@@ -93,6 +111,8 @@ async function main(): Promise<void> {
   await makeWorkbook(join(OUT, name('')), '全社');
   await makeWorkbook(join(OUT, dirs[0], name(ASCII ? 'tokyo' : '東京')), '東京支店');
   await makeWorkbook(join(OUT, dirs[1], name(ASCII ? 'osaka' : '大阪')), '大阪支店');
+  // 広いシートは、フォルダー読み込みの対象に混ざらないよう 1 つ上に置く
+  await makeWideWorkbook(join(OUT, '..', 'wide.xlsx'));
   console.log('完了');
 }
 
