@@ -38,6 +38,26 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+/**
+ * 条件が満たされるまで待つ。
+ * 固定時間の待機だと CI の速度差で不安定になるため、こちらを使う。
+ */
+async function waitUntil(fn, msg, timeout = 20000) {
+  const deadline = Date.now() + timeout;
+  let last;
+  for (;;) {
+    try {
+      if (await fn()) return;
+    } catch (e) {
+      last = e.message;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`${msg}${last ? ` (最後のエラー: ${last})` : ''}`);
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
 const requests = [];
 const consoleErrors = [];
 
@@ -153,10 +173,11 @@ await check('ドラッグで範囲選択できる', async () => {
 await check('「選択範囲以外をロック」を実行できる', async () => {
   await page.click('.ribbon-tab:has-text("ロック")');
   await page.click('.rbtn-lg:has-text("選択範囲以外を")');
-  await page.waitForTimeout(800);
   // 直近のトースト (読み込み完了の通知がまだ残っていることがある)
-  const t = await page.locator('.toast').last().textContent();
-  assert(/セル|変更/.test(t), `結果が想定外: ${t}`);
+  await waitUntil(
+    async () => /セル|変更/.test(await page.locator('.toast').last().textContent()),
+    'ロックの実行結果が表示されない',
+  );
 });
 
 await check('ロック解除セルが黄色で可視化される', async () => {
@@ -165,10 +186,11 @@ await check('ロック解除セルが黄色で可視化される', async () => {
 });
 
 await check('シート保護を有効化できる', async () => {
-  await page.click('.rbtn-lg:has-text("シート保護を\\n有効化"), .rbtn-lg:has-text("シート保護を")');
-  await page.waitForTimeout(400);
-  const status = await page.textContent('.statusbar');
-  assert(status.includes('保護あり'), `ステータス: ${status}`);
+  await page.click('.rbtn-lg:has-text("シート保護を")');
+  await waitUntil(
+    async () => (await page.textContent('.statusbar')).includes('保護あり'),
+    'シート保護がステータスバーに反映されない',
+  );
 });
 
 await page.screenshot({ path: join(SHOTS, '02-locked.png') });
@@ -178,9 +200,10 @@ console.log('\n\x1b[1m色分け\x1b[0m');
 await check('ロック解除セルを一括で塗れる', async () => {
   await page.click('.ribbon-tab:has-text("書式")');
   await page.click('.rbtn-lg:has-text("ロック解除セル")');
-  await page.waitForTimeout(500);
-  const filled = await page.locator('.cell[style*="background"]').count();
-  assert(filled > 0, '塗られたセルが見つからない');
+  await waitUntil(
+    async () => (await page.locator('.cell[style*="background"]').count()) > 0,
+    '塗られたセルが見つからない',
+  );
 });
 
 await page.screenshot({ path: join(SHOTS, '03-colored.png') });
@@ -204,9 +227,11 @@ await check('試算では値が変わらない', async () => {
 
 await check('年度更新を実行すると 2024 が 2025 になる', async () => {
   await page.click('.rbtn-lg:has-text("年度更新を")');
-  await page.waitForTimeout(1200);
+  await waitUntil(
+    async () => (await page.textContent('.grid-canvas')).includes('2025年度'),
+    '2025 に更新されない',
+  );
   const text = await page.textContent('.grid-canvas');
-  assert(text.includes('2025年度'), `2025 に更新されていない`);
   assert(!text.includes('2024年度 原価管理表'), '2024 が残っている');
 });
 
@@ -218,9 +243,10 @@ await check('シート名も 2025年度 に変わる', async () => {
 
 await check('他のブックにも適用されている', async () => {
   await page.locator('.tree-file').nth(1).click();
-  await page.waitForTimeout(600);
-  const text = await page.textContent('.grid-canvas');
-  assert(text.includes('2025年度'), '2 冊目が更新されていない');
+  await waitUntil(
+    async () => (await page.textContent('.grid-canvas')).includes('2025年度'),
+    '2 冊目が更新されていない',
+  );
 });
 
 await page.screenshot({ path: join(SHOTS, '04-year-updated.png') });
@@ -427,7 +453,7 @@ await check('遮断がステータスバーに表示される', async () => {
 });
 
 await page.click('.ribbon-tab:has-text("セキュリティ")');
-await page.waitForTimeout(300);
+await page.waitForSelector('.rgroup-title:has-text("遮断した通信")');
 await page.screenshot({ path: join(SHOTS, '06-security.png') });
 
 // --------------------------------------------------------------------------
@@ -471,7 +497,10 @@ await check('ページ本体以外に通信が発生しない', async () => {
   await hostedPage.waitForSelector('.cell', { timeout: 20000 });
   await hostedPage.click('.ribbon-tab:has-text("年度更新")');
   await hostedPage.click('.rbtn-lg:has-text("年度更新を")');
-  await hostedPage.waitForTimeout(1500);
+  await waitUntil(
+    async () => (await hostedPage.textContent('.grid-canvas')).includes('2025年度'),
+    'サーバー配信時に年度更新が反映されない',
+  );
   const added = hostedRequests.slice(baseline);
   assert(added.length === 0, `操作中に ${added.length} 件の通信: ${added.join(', ')}`);
   // 最初の読み込みもドキュメント 1 件だけ (全て単一 HTML に同梱されているため)
