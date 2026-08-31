@@ -457,6 +457,59 @@ await page.screenshot({ path: join(SHOTS, '02-locked.png') });
 
 console.log('\n\x1b[1m色分け\x1b[0m');
 
+await check('「範囲を塗る」の項目は無くなっている', async () => {
+  await page.click('.ribbon-tab:has-text("書式")');
+  const panel = await page.textContent('.ribbon-panel');
+  assert(!panel.includes('範囲を塗る'), '「範囲を塗る」が残っている');
+  assert(!panel.includes('選択範囲を'), '「選択範囲を塗りつぶす」が残っている');
+  assert(panel.includes('塗りつぶしの色'), '色のパレットが消えている');
+});
+
+await check('セルを選んで色を押すと、その場で塗られる', async () => {
+  // A5 (材料費) を選ぶ
+  await page.fill('.namebox input', 'A5');
+  await page.press('.namebox input', 'Enter');
+  await waitUntil(
+    async () => (await page.inputValue('.formula-input')) === '材料費',
+    'A5 が選べない',
+  );
+  await page.click('.ribbon-tab:has-text("書式")');
+  // パレットの「赤」を押す
+  await page.click('.swatches .swatch[title="赤"]');
+  await waitUntil(async () => {
+    const cell = page.locator('.cell', { hasText: '材料費' }).first();
+    const bg = await cell.evaluate((el) => getComputedStyle(el).backgroundColor);
+    return bg === 'rgb(255, 0, 0)';
+  }, '色を押してもセルが塗られない');
+});
+
+await check('「塗りなし」を押すと塗りつぶしが解除される', async () => {
+  await page.click('.swatches .swatch.none');
+  await waitUntil(async () => {
+    const cell = page.locator('.cell', { hasText: '材料費' }).first();
+    const bg = await cell.evaluate((el) => getComputedStyle(el).backgroundColor);
+    return bg !== 'rgb(255, 0, 0)';
+  }, '塗りなしを押しても解除されない');
+});
+
+await check('セルを選んでいないときは色を選ぶだけで塗らない', async () => {
+  // シートを切り替えて選択を解除する
+  await page.click('.sheettab:has-text("集計")');
+  await waitUntil(async () => (await page.inputValue('.namebox input')) === '', '選択が解除されない');
+  const before = await page.locator('.cell[style*="background"]').count();
+  await page.click('.swatches .swatch[title="黄"]');
+  await waitUntil(
+    async () => (await page.locator('.toast').last().textContent()).includes('色を選びました'),
+    '色を選んだ案内が出ない',
+  );
+  assert(
+    (await page.locator('.cell[style*="background"]').count()) === before,
+    '選択が無いのに塗られている',
+  );
+  await page.click('.sheettab:has-text("2024年度")');
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, 'シートが戻らない');
+});
+
 await check('ロック解除セルを一括で塗れる', async () => {
   await page.click('.ribbon-tab:has-text("書式")');
   await page.click('.rbtn-lg:has-text("ロック解除セル")');

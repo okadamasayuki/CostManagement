@@ -5,14 +5,12 @@ import {
   Check,
   ColorSwatches,
   NoteBox,
-  RangeSelector,
   RCol,
   RGroup,
   ScopeSelector,
-  toRangeSpec,
-  type RangeMode,
 } from '../ui';
 import { rectToA1 } from '../../excel/cellRef';
+import { argbToCss } from '../../excel/format';
 import { ColorLockDialog } from './ColorLockDialog';
 import { runOperation, setState, toast, useStore } from '../../state/store';
 
@@ -24,25 +22,43 @@ import { runOperation, setState, toast, useStore } from '../../state/store';
 export function FormatPanel() {
   const s = useStore();
   const [color, setColor] = useState<string | null>('FFFFF2CC');
-  const [rangeMode, setRangeMode] = useState<RangeMode>('selection');
-  const [a1, setA1] = useState('');
   const [onlyWithValue, setOnlyWithValue] = useState(false);
   const [showColorLock, setShowColorLock] = useState(false);
 
   const selectionA1 = s.selection ? rectToA1(s.selection) : null;
   const ready = s.books.length > 0;
 
-  async function fillSelection(clear: boolean) {
-    const range = toRangeSpec(rangeMode, a1, selectionA1);
-    if (!range) {
-      toast('warn', '対象の範囲が決まっていません', 'グリッド上でセルを選ぶか、アドレスを入力してください。');
+  /**
+   * 色をクリックしたら、選んでいるセルにその場で反映する。
+   * (Excel の「塗りつぶしの色」と同じ感覚で使えるように)
+   *
+   * セルを選んでいないときは色を選ぶだけにする。
+   * こうしておくと「ロック状態で一括」で使う色を、
+   * うっかり塗ってしまわずに変更できる。
+   */
+  async function pickColor(argb: string | null) {
+    setColor(argb);
+    if (!selectionA1) {
+      toast(
+        'info',
+        argb === null ? '「塗りなし」を選びました' : '色を選びました',
+        'セルを選んでから色を押すと、その場で塗れます。',
+      );
       return;
     }
-    const r = await runOperation({ op: 'fillRange', range, colorArgb: clear ? null : color });
+    const r = await runOperation({
+      op: 'fillRange',
+      range: { kind: 'a1', a1: selectionA1 },
+      colorArgb: argb,
+    });
     toast(r.changedCells ? 'success' : 'info', r.summary);
   }
 
   async function fillByLock(target: 'locked' | 'unlocked', clear: boolean) {
+    if (!clear && color === null) {
+      toast('warn', '色が選ばれていません', '左の「塗りつぶしの色」で色を選んでください。');
+      return;
+    }
     const r = await runOperation({
       op: 'fillByLockState',
       target,
@@ -56,33 +72,19 @@ export function FormatPanel() {
     <>
       <RGroup title="塗りつぶしの色">
         <RCol>
-          <ColorSwatches value={color} onChange={setColor} allowNone={false} />
-          <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>
-            右端の四角で任意の色を選べます
+          <ColorSwatches value={color} onChange={(c) => void pickColor(c)} />
+          <div style={{ fontSize: 10.5, color: 'var(--text-dim)', width: 150, lineHeight: 1.6 }}>
+            {selectionA1 ? (
+              <>
+                <b>{selectionA1}</b> にその場で反映します。
+              </>
+            ) : (
+              'セルを選んでから色を押すと、その場で塗れます。'
+            )}
+            <br />
+            斜線は<b>塗りなし</b>、右端の四角で任意の色を選べます。
           </div>
         </RCol>
-      </RGroup>
-
-      <RGroup title="範囲を塗る">
-        <BigButton
-          icon="🎨"
-          label={<>選択範囲を<br />塗りつぶす</>}
-          disabled={!ready}
-          onClick={() => void fillSelection(false)}
-        />
-        <BigButton
-          icon="🧽"
-          label={<>塗りつぶしを<br />解除</>}
-          disabled={!ready}
-          onClick={() => void fillSelection(true)}
-        />
-        <RangeSelector
-          mode={rangeMode}
-          a1={a1}
-          selectionA1={selectionA1}
-          onModeChange={setRangeMode}
-          onA1Change={setA1}
-        />
       </RGroup>
 
       <RGroup title="ロック状態で一括">
@@ -101,6 +103,25 @@ export function FormatPanel() {
           onClick={() => void fillByLock('locked', false)}
         />
         <RCol>
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5 }}
+            title="左の「塗りつぶしの色」で選んだ色を使います"
+          >
+            <span
+              style={{
+                width: 16,
+                height: 16,
+                borderRadius: 3,
+                border: '1px solid var(--border-strong)',
+                background: color ? argbToCss(color) : undefined,
+                backgroundImage: color
+                  ? undefined
+                  : 'repeating-linear-gradient(45deg,#fff,#fff 3px,#e11 3px,#e11 4px)',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ color: 'var(--text-dim)' }}>左で選んだ色を使います</span>
+          </div>
           <Btn onClick={() => void fillByLock('unlocked', true)} disabled={!ready}>
             ロック解除セルの塗りを解除
           </Btn>

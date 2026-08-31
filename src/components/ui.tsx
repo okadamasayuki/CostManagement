@@ -126,7 +126,7 @@ export function ColorSwatches(props: {
       {props.allowNone !== false && (
         <button
           type="button"
-          title="塗りなし"
+          title="塗りなし (塗りつぶしを解除する)"
           className={`swatch none${props.value === null ? ' selected' : ''}`}
           onClick={() => props.onChange(null)}
         />
