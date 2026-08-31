@@ -8,6 +8,7 @@ import {
   RangeSelector,
   RCol,
   RGroup,
+  ScopeBadge,
   ScopeSelector,
   toRangeSpec,
   type RangeMode,
@@ -251,6 +252,7 @@ export function YearPanel() {
       </RGroup>
 
       <RGroup title="文字列の置換">
+        <ScopeBadge note="年度更新と同じ「対象」「適用先」が使われます" />
         <RCol>
           <Field label="検索">
             <input

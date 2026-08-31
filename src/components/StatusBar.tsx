@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { SheetView } from '../excel/types';
 import { rectCellCount, rectToA1 } from '../excel/cellRef';
 import { getBlockedAttempts, onBlockedAttempt } from '../security/networkGuard';
+import { describeScope, describeScopeShort } from '../recipe/describe';
 import { setState, useStore } from '../state/store';
 
 export function StatusBar(props: { view: SheetView | null }) {
@@ -34,6 +35,11 @@ export function StatusBar(props: { view: SheetView | null }) {
         </span>
       )}
       <span className="spacer" />
+      {s.books.length > 0 && (
+        <span className="sb-item" title={`操作の適用先: ${describeScope(s.scope)}`}>
+          🎯 適用先: {describeScopeShort(s.scope)}
+        </span>
+      )}
       {dirty > 0 && <span className="sb-item">未保存 {dirty} ブック</span>}
       <span className="sb-item">記録 {s.recording ? 'ON' : 'OFF'} / {s.recipe.steps.length} 手順</span>
       <span

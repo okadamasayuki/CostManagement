@@ -196,6 +196,32 @@ await check('最上位を選ぶと全ブックが対象になる', async () => {
   }, '最上位を選んでも全ブックが対象にならない');
 });
 
+await check('文字列の置換もフォルダー指定の中だけに効く', async () => {
+  // 「文字列の置換」はリボンの右端にあり独立して見えるが、
+  // 年度更新と同じ適用先が使われる。それが画面から分かることも確かめる。
+  const tokyoPath = await page
+    .locator('[data-testid="scope-folder"] option')
+    .evaluateAll((els) => els.map((e) => e.value).find((v) => v.endsWith('tokyo')));
+  await page.selectOption('[data-testid="scope-folder"]', tokyoPath);
+  const badges = await page.locator('.rgroup:has-text("文字列の置換") .scope-badge').allTextContents();
+  assert(badges.length === 1, '文字列の置換に適用先の表示がない');
+  assert(/tokyo/.test(badges[0]), `適用先の表示が想定外: ${badges[0]}`);
+  assert(/同じ/.test(badges[0]), '適用先が共通である旨の説明がない');
+
+  await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和6"]', '原価管理表');
+  await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和7"]', '原価集計表');
+  await page.click('.rgroup:has-text("文字列の置換") .rbtn:has-text("試算")');
+  await waitUntil(async () => {
+    const w = await page.locator('.detail-list .where').allTextContents();
+    return w.length > 0;
+  }, '文字列置換の試算結果が出ない');
+  const where = await page.locator('.detail-list .where').allTextContents();
+  assert(
+    where.every((w) => w.includes('tokyo')),
+    `フォルダー外まで対象になっている: ${where.join(' | ')}`,
+  );
+});
+
 await check('フォルダー指定を解除して元に戻せる', async () => {
   await page.click('.scope-banner .icon-btn');
   await waitUntil(
@@ -205,7 +231,15 @@ await check('フォルダー指定を解除して元に戻せる', async () => {
   // 以降のテストのため、適用先を既定に戻す
   await page.selectOption('[data-testid="scope-books"]', 'current');
   await page.selectOption('[data-testid="scope-sheets"]', 'current');
+  await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和6"]', '');
+  await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和7"]', '');
   await page.click('.rp-title:has-text("試算結果") .icon-btn');
+});
+
+await check('適用先はステータスバーにも常に出る', async () => {
+  const status = await page.textContent('.statusbar');
+  assert(/適用先/.test(status), `ステータスバー: ${status}`);
+  assert(/このブック/.test(status), `解除後の適用先が想定外: ${status}`);
 });
 
 console.log('\n\x1b[1m色からロックを設定\x1b[0m');

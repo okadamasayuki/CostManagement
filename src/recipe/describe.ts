@@ -35,6 +35,27 @@ export function describeScope(scope: OpScope): string {
   return `${book} の ${sheet}`;
 }
 
+/** 画面に常時出しておくための短い表記 */
+export function describeScopeShort(scope: OpScope): string {
+  const book =
+    scope.books === 'current'
+      ? 'このブック'
+      : scope.books === 'all'
+        ? '全ブック'
+        : scope.books === 'folder'
+          ? scope.bookFolder
+            ? `${scope.bookFolder}/`
+            : '全ブック'
+          : (scope.bookGlob || '*');
+  const sheet =
+    scope.sheets === 'current'
+      ? 'このシート'
+      : scope.sheets === 'all'
+        ? '全シート'
+        : (scope.sheetGlob || '*');
+  return `${book} ・ ${sheet}`;
+}
+
 export function describeBody(body: StepBody): string {
   switch (body.op) {
     case 'setLock':

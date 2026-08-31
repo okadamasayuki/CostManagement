@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { OpScope } from '../excel/types';
 import { listFolders } from '../excel/folders';
+import { describeScope, describeScopeShort } from '../recipe/describe';
 import { useStore } from '../state/store';
 import type { RangeSpec } from '../recipe/types';
 import { argbToCss, cssToArgb } from '../excel/format';
@@ -224,6 +225,22 @@ export function ScopeSelector(props: { scope: OpScope; onChange(s: OpScope): voi
         </Field>
       )}
     </RCol>
+  );
+}
+
+/**
+ * 今どこに適用されるのかを示す表示。
+ * 「適用先」の設定はリボン内の離れた場所にあるため、
+ * 実行ボタンのそばにも出して取り違えを防ぐ。
+ */
+export function ScopeBadge(props: { note?: string }) {
+  const s = useStore();
+  return (
+    <div className="scope-badge" title={describeScope(s.scope)}>
+      <span>🎯 適用先</span>
+      <b>{describeScopeShort(s.scope)}</b>
+      {props.note && <span className="note">{props.note}</span>}
+    </div>
   );
 }
 

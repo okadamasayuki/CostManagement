@@ -118,7 +118,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ------------------------------------------------------------------ リボン */
 
-.ribbon { background: var(--ribbon-bg); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ribbon {
+  background: var(--ribbon-bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+}
 
 .ribbon-tabs { display: flex; gap: 0; padding: 0 6px; background: var(--excel-green); }
 
@@ -141,6 +147,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 6px 4px 4px;
   min-height: 92px;
   overflow-x: auto;
+  /* min-width を 0 にしないと、中身の幅がそのまま画面全体を押し広げてしまう */
+  min-width: 0;
 }
 
 .rgroup {
@@ -148,7 +156,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   flex-direction: column;
   padding: 0 10px;
   border-right: 1px solid var(--border);
-  min-width: 0;
+  /* 縮めずに本来の幅を保ち、入りきらない分はリボンごと横スクロールさせる */
+  flex-shrink: 0;
 }
 .rgroup:last-child { border-right: none; }
 .rgroup-body { display: flex; gap: 6px; align-items: flex-start; flex: 1; }
@@ -763,5 +772,30 @@ code, .mono { font-family: Consolas, "Courier New", monospace; }
   background: repeating-linear-gradient(45deg, #fff, #fff 5px, rgba(90,95,110,0.28) 5px, rgba(90,95,110,0.28) 6px);
 }
 .legend-chip.unlocked { background: var(--unlocked-tint); box-shadow: inset 0 0 0 1px rgba(214,158,0,0.6); }
+
+/* 実行ボタンのそばに出す「適用先」の表示 */
+.scope-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-self: flex-start;
+  padding: 3px 7px;
+  border: 1px solid #b8d5c6;
+  border-left: 3px solid var(--excel-green);
+  border-radius: 3px;
+  background: #eef6f1;
+  font-size: 10px;
+  line-height: 1.4;
+  width: 150px;
+}
+.scope-badge > span { color: var(--text-dim); }
+.scope-badge > b {
+  color: var(--excel-green-dark);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scope-badge .note { color: var(--text-dim); font-size: 9.5px; white-space: normal; }
 
 .hidden-input { display: none; }

@@ -553,6 +553,53 @@ async function main(): Promise<void> {
     assert.equal(book.wb.getWorksheet('S')!.getCell('A1').value, '2024', '何も変わらないこと');
   });
 
+  await test('文字列の置換もフォルダー単位で効く', async () => {
+    const mk = (id: string, relPath: string) => {
+      const b = makeBook(id, relPath.split('/').pop()!, (wb) => {
+        const ws = wb.addWorksheet('令和6年度');
+        ws.getCell('A1').value = '令和6年度 原価管理表';
+        ws.getCell('A2').value = { formula: "'令和6年度'!B1" };
+      });
+      b.relPath = relPath;
+      return b;
+    };
+    const books = [
+      mk('b1', '原価/東京/実績.xlsx'),
+      mk('b2', '原価/東京/支店別/新宿.xlsx'),
+      mk('b3', '原価/大阪/実績.xlsx'),
+    ];
+
+    const out = await applyStep(
+      step(
+        {
+          op: 'replaceText',
+          find: '令和6年度',
+          replace: '令和7年度',
+          matchCase: false,
+          wholeCell: false,
+          targets: { values: true, formulas: true, sheetNames: true, fileNames: false },
+          range: { kind: 'used' },
+        },
+        { books: 'folder', bookFolder: '原価/東京', sheets: 'all' },
+      ),
+      ctx(books),
+    );
+    assert.equal(out.targetSheets, 2, '孫フォルダーも含めて 2 ブックが対象');
+
+    for (const b of [books[0], books[1]]) {
+      const wb = await roundTrip(b);
+      const ws = wb.getWorksheet('令和7年度');
+      assert.ok(ws, `${b.relPath}: シート名が置換されるはず`);
+      assert.equal(ws!.getCell('A1').value, '令和7年度 原価管理表');
+      assert.equal(
+        (ws!.getCell('A2').value as { formula: string }).formula,
+        "'令和7年度'!B1",
+        '数式の中のシート名も追随するはず',
+      );
+    }
+    assert.ok(books[2].wb.getWorksheet('令和6年度'), '大阪は対象外で変わらないはず');
+  });
+
   await test('シート名の衝突時は改名を見送る', async () => {
     const book = makeBook('b1', 'a.xlsx', (wb) => {
       wb.addWorksheet('2024').getCell('A1').value = 'x';
