@@ -2,6 +2,12 @@
 #
 # 公開されるのは dist/index.html (全てを同梱した単一ファイル) だけ。
 # ソースや node_modules は Pages には載らない。
+#
+# 【初回のみ手動設定が必要】
+#   リポジトリの Settings → Pages → Build and deployment → Source を
+#   「GitHub Actions」にしてください。
+#   ワークフローの GITHUB_TOKEN では Pages の新規作成ができないため、
+#   ここだけは手作業になります (2 回目以降は不要)。
 name: GitHub Pages へ公開
 
 on:
@@ -53,11 +59,6 @@ jobs:
           cp dist/index.html _site/index.html
           # Jekyll の処理を通さない (この HTML をそのまま配信する)
           touch _site/.nojekyll
-
-      - name: Pages の設定 (未設定なら有効化する)
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:

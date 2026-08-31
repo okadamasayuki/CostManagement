@@ -181,8 +181,14 @@ npm run fixtures   # 動作確認用のサンプル Excel を sample/ に生成
 
 公開されるのは `dist/index.html`（単一ファイル）だけで、ソースは Pages には載りません。
 
-初回の公開時に Pages の設定も自動で有効化されます
-（うまくいかない場合は **Settings → Pages → Source** を「**GitHub Actions**」にしてください）。
+**初回だけ手動の設定が必要です。**
+リポジトリの **Settings → Pages → Build and deployment → Source** を
+「**GitHub Actions**」に変更してください。
+ワークフローの `GITHUB_TOKEN` では Pages サイトの新規作成ができないため、
+ここだけは手作業になります（2 回目以降は不要です）。
+
+設定後に **Actions** タブから「GitHub Pages へ公開」を
+`Run workflow` で実行すれば公開されます。
 
 ### 構成
 
