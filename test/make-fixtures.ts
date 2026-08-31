@@ -36,6 +36,13 @@ function buildCostSheet(wb: ExcelJS.Workbook, sheetName: string, dept: string): 
     ws.getCell(`A${r}`).value = name;
     ws.getCell(`B${r}`).value = 1_000_000 * (i + 1);
     ws.getCell(`C${r}`).value = 1_100_000 * (i + 1);
+    // 予算欄は「入力してもらう欄」として黄色にしておく。
+    // 「色からロックを設定」の動作確認に使う。
+    ws.getCell(`C${r}`).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFFFF00' },
+    };
     ws.getCell(`D${r}`).value = { formula: `C${r}-B${r}` };
     ws.getCell(`E${r}`).value = i === 0 ? `${YEAR}年度は単価改定を反映` : '';
     for (const col of ['B', 'C', 'D']) ws.getCell(`${col}${r}`).numFmt = '#,##0';

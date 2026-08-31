@@ -9,7 +9,8 @@
  */
 import ExcelJS from 'exceljs';
 import assert from 'node:assert/strict';
-import { applyStep, type OpContext } from '../src/excel/ops';
+import { applyStep, collectUsedColors, type OpContext } from '../src/excel/ops';
+import { resolveColor } from '../src/excel/color';
 import type { LoadedWorkbook } from '../src/excel/types';
 import type { RecipeStep, StepBody } from '../src/recipe/types';
 import { DEFAULT_PROTECT_OPTIONS, DEFAULT_YEAR_TARGETS } from '../src/recipe/types';
@@ -215,6 +216,147 @@ async function main(): Promise<void> {
     const fill = ws.getCell('B2').fill as { fgColor?: { argb?: string } };
     assert.equal(fill?.fgColor?.argb, 'FFFFFF00', 'B2 が黄色になるはず');
     assert.equal(ws.getCell('A1').fill, undefined, 'ロック済みの A1 は塗られないはず');
+  });
+
+  // ------------------------------------------------------------------------
+  section('色からロックを設定');
+
+  await test('指定した色のセルだけロックを解除できる', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('入力');
+      for (let r = 1; r <= 4; r++) {
+        for (let c = 1; c <= 4; c++) {
+          const cell = ws.getRow(r).getCell(c);
+          cell.value = 'v';
+          // B 列だけ黄色、C 列は水色、他は塗りなし
+          if (c === 2) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+          if (c === 3) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00B0F0' } };
+        }
+      }
+    });
+    await applyStep(
+      step({
+        op: 'setLockByFill',
+        colorKeys: ['argb:FFFFFF00'],
+        match: 'in',
+        locked: false,
+        includeUnfilled: false,
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const wb = await roundTrip(book);
+    const ws = wb.getWorksheet('入力')!;
+    assert.equal(isCellLocked(ws.getCell('B2')), false, '黄色は解除されるはず');
+    assert.equal(isCellLocked(ws.getCell('B4')), false, '黄色は解除されるはず');
+    assert.equal(isCellLocked(ws.getCell('C2')), true, '水色は対象外のはず');
+    assert.equal(isCellLocked(ws.getCell('A1')), true, '塗りなしは対象外のはず');
+  });
+
+  await test('指定した色「以外」をロックできる', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('入力');
+      for (let r = 1; r <= 3; r++) {
+        for (let c = 1; c <= 3; c++) {
+          const cell = ws.getRow(r).getCell(c);
+          cell.value = 'v';
+          cell.protection = { locked: false }; // 事前に全部解除しておく
+          if (c === 2) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+        }
+      }
+    });
+    await applyStep(
+      step({
+        op: 'setLockByFill',
+        colorKeys: ['argb:FFFFFF00'],
+        match: 'out',
+        locked: true,
+        includeUnfilled: true,
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const wb = await roundTrip(book);
+    const ws = wb.getWorksheet('入力')!;
+    assert.equal(isCellLocked(ws.getCell('B2')), false, '黄色は解除のままのはず');
+    assert.equal(isCellLocked(ws.getCell('A1')), true, '黄色以外はロックされるはず');
+    assert.equal(isCellLocked(ws.getCell('C3')), true, '黄色以外はロックされるはず');
+  });
+
+  await test('塗りのないセルを対象に含めないようにできる', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      for (let c = 1; c <= 3; c++) {
+        const cell = ws.getRow(1).getCell(c);
+        cell.value = 'v';
+        cell.protection = { locked: false };
+      }
+      ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+      ws.getCell('B1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFF0000' } };
+      // C1 は塗りなし
+    });
+    await applyStep(
+      step({
+        op: 'setLockByFill',
+        colorKeys: ['argb:FFFFFF00'],
+        match: 'out',
+        locked: true,
+        includeUnfilled: false,
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const ws = (await roundTrip(book)).getWorksheet('S')!;
+    assert.equal(isCellLocked(ws.getCell('A1')), false, '黄色は対象外');
+    assert.equal(isCellLocked(ws.getCell('B1')), true, '赤はロックされる');
+    assert.equal(isCellLocked(ws.getCell('C1')), false, '塗りなしは含めない指定なので変わらない');
+  });
+
+  await test('テーマ色で塗られたセルも拾える', () => {
+    // 「塗りつぶしの色」から標準パレットを選ぶと theme + tint で保存される。
+    // argb が入っていないため、解決しないと色として認識できない。
+    const plain = resolveColor({ argb: 'FFFFFF00' });
+    assert.equal(plain?.key, 'argb:FFFFFF00');
+    assert.equal(plain?.isApprox, false);
+
+    const theme = resolveColor({ theme: 7, tint: 0.4 });
+    assert.ok(theme, 'テーマ色が解決されるはず');
+    assert.equal(theme!.key, 'theme:7+0.4');
+    assert.equal(theme!.isApprox, true);
+    assert.match(theme!.argb, /^FF[0-9A-F]{6}$/, '実際の色に解決されるはず');
+
+    // tint が違えば別の色として扱われる
+    assert.notEqual(resolveColor({ theme: 7, tint: 0.4 })!.key, resolveColor({ theme: 7 })!.key);
+    // tint が正なら元より明るくなる
+    const base = resolveColor({ theme: 7 })!.argb;
+    assert.notEqual(theme!.argb, base);
+
+    // 色指定が無い場合は null
+    assert.equal(resolveColor(undefined), null);
+    assert.equal(resolveColor({}), null);
+  });
+
+  await test('使われている色を数えて多い順に並べられる', () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      for (let r = 1; r <= 5; r++) {
+        const cell = ws.getRow(r).getCell(1);
+        cell.value = r;
+        // 黄色 3 セル、赤 2 セル
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: r <= 3 ? 'FFFFFF00' : 'FFFF0000' },
+        };
+      }
+      ws.getCell('B1').value = '塗りなし';
+    });
+    const used = collectUsedColors(ctx([book]), { books: 'all', sheets: 'all' });
+    assert.equal(used.length, 2, `見つかった色: ${used.map((u) => u.key).join(', ')}`);
+    assert.equal(used[0].key, 'argb:FFFFFF00');
+    assert.equal(used[0].count, 3, '多い順に並ぶはず');
+    assert.equal(used[1].count, 2);
+    assert.ok(used[0].sample.startsWith('S!A'), `場所の例: ${used[0].sample}`);
   });
 
   // ------------------------------------------------------------------------

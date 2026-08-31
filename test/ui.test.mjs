@@ -144,6 +144,54 @@ await check('シートタブが 3 枚出る', async () => {
 
 await page.screenshot({ path: join(SHOTS, '01-loaded.png') });
 
+console.log('\n\x1b[1m色からロックを設定\x1b[0m');
+
+await check('使われている色の一覧が出る', async () => {
+  await page.click('.ribbon-tab:has-text("書式")');
+  await page.click('.rbtn-lg:has-text("色から")');
+  await page.waitForSelector('.modal:has-text("色からロックを設定")');
+  await waitUntil(
+    async () => (await page.locator('.modal [data-color]').count()) > 0,
+    '色の一覧が出ない',
+  );
+  const keys = await page.locator('.modal [data-color]').evaluateAll((els) =>
+    els.map((e) => e.getAttribute('data-color')),
+  );
+  // サンプルは見出しが薄い青、予算欄が黄色
+  assert(keys.includes('argb:FFFFFF00'), `黄色が見つからない: ${keys.join(', ')}`);
+  assert(keys.includes('argb:FFD9E1F2'), `見出し色が見つからない: ${keys.join(', ')}`);
+});
+
+await check('選んだ色のセルだけロックを解除できる', async () => {
+  // 黄色 = 予算欄 C5:C9 の 5 セル
+  await page.click('.modal [data-color="argb:FFFFFF00"]');
+  await page.locator('.modal .check:has-text("ロック解除する") input').check();
+  await page.click('.modal-foot .rbtn:has-text("試算")');
+  await waitUntil(
+    async () => (await page.locator('.note-box:has-text("試算")').count()) > 0,
+    '試算結果が出ない',
+  );
+  const preview = await page.locator('.note-box:has-text("試算")').textContent();
+  assert(/5 箇所/.test(preview), `試算の件数が想定外: ${preview}`);
+
+  await page.click('.modal-foot .rbtn.accent');
+  await waitUntil(async () => (await page.locator('.modal').count()) === 0, 'ダイアログが閉じない');
+  await waitUntil(
+    async () => (await page.locator('.cell.ov-unlocked').count()) === 5,
+    'ロック解除されたセルが 5 つにならない',
+  );
+});
+
+await check('手順書に色の指定が記録される', async () => {
+  await page.click('.ribbon-tab:has-text("手順書")');
+  await waitUntil(
+    async () => (await page.locator('.step-item:has-text("塗られているセル")').count()) > 0,
+    '色の手順が記録されていない',
+  );
+  const body = await page.locator('.step-item:has-text("塗られているセル")').last().textContent();
+  assert(/ロック解除する/.test(body), `手順の説明が想定外: ${body}`);
+});
+
 console.log('\n\x1b[1mセルの選択とロック\x1b[0m');
 
 await check('セルをクリックして選択できる', async () => {
@@ -185,12 +233,22 @@ await check('ロック解除セルが黄色で可視化される', async () => {
   assert(n > 0, 'ロック解除セルの網掛けが見えない');
 });
 
-await check('シート保護を有効化できる', async () => {
-  await page.click('.rbtn-lg:has-text("シート保護を")');
+await check('ロック操作だけでシート保護まで自動でかかる', async () => {
+  // 「ロック操作のあと自動で保護する」が既定で ON のため、
+  // シート保護のボタンを押さなくても保護済みになるはず
   await waitUntil(
     async () => (await page.textContent('.statusbar')).includes('保護あり'),
-    'シート保護がステータスバーに反映されない',
+    'ロック操作だけではシート保護がかからない',
   );
+});
+
+await check('自動保護は手順書にも 2 手順として残る', async () => {
+  await page.click('.ribbon-tab:has-text("手順書")');
+  await waitUntil(
+    async () => (await page.locator('.step-item:has-text("シートの保護を有効")').count()) > 0,
+    'シート保護の手順が記録されていない',
+  );
+  await page.click('.ribbon-tab:has-text("ロック")');
 });
 
 await page.screenshot({ path: join(SHOTS, '02-locked.png') });

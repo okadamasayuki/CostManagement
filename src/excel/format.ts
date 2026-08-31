@@ -1,3 +1,5 @@
+import { resolveColor } from './color';
+
 /**
  * Excel の表示形式 (numFmt) の簡易実装。
  * 画面表示を「Excel で開いたときの見た目」に近づけるためだけのもので、
@@ -88,16 +90,12 @@ export function pointsToPx(pt: number | undefined): number {
   return Math.round(pt * (96 / 72));
 }
 
-/** ExcelJS の色オブジェクトから 'FFRRGGBB' を取り出す */
+/**
+ * ExcelJS の色オブジェクトから 'FFRRGGBB' を取り出す。
+ * テーマ色 (theme + tint) や古い色番号 (indexed) も実際の RGB に解決する。
+ */
 export function colorToArgb(color: unknown): string | undefined {
-  if (!color || typeof color !== 'object') return undefined;
-  const c = color as { argb?: string; theme?: number; tint?: number };
-  if (typeof c.argb === 'string' && /^[0-9A-Fa-f]{6,8}$/.test(c.argb)) {
-    return c.argb.length === 6 ? `FF${c.argb.toUpperCase()}` : c.argb.toUpperCase();
-  }
-  // テーマ色は近似では扱えないので、色付きであることだけ分かるよう既定色を返す
-  if (typeof c.theme === 'number') return undefined;
-  return undefined;
+  return resolveColor(color)?.argb;
 }
 
 /** 'FFRRGGBB' -> '#RRGGBB' */

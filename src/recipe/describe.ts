@@ -52,6 +52,18 @@ export function describeBody(body: StepBody): string {
       return body.colorArgb === null
         ? `${describeRange(body.range)}の塗りつぶしを解除する`
         : `${describeRange(body.range)}を ${argbToCss(body.colorArgb)} で塗りつぶす`;
+    case 'setLockByFill': {
+      const colors = body.colorLabels?.length
+        ? body.colorLabels.join('・')
+        : `${body.colorKeys.length} 色`;
+      const target =
+        body.match === 'in'
+          ? `${colors} で塗られているセル`
+          : `${colors} 以外で塗られているセル${body.includeUnfilled ? 'と、塗りのないセル' : ''}`;
+      return `${describeRange(body.range)}のうち、${target}を${
+        body.locked ? 'ロックする' : 'ロック解除する (入力可能にする)'
+      }`;
+    }
     case 'fillByLockState':
       return body.colorArgb === null
         ? `${body.target === 'locked' ? 'ロックされている' : 'ロックされていない'}セルの塗りつぶしを解除する`
@@ -125,6 +137,10 @@ export function autoLabel(body: StepBody): string {
       return 'シート保護を解除';
     case 'fillRange':
       return body.colorArgb === null ? '塗りつぶしを解除' : '範囲を塗りつぶし';
+    case 'setLockByFill':
+      return `色で${body.locked ? 'ロック' : 'ロック解除'} (${
+        body.match === 'in' ? '指定色' : '指定色以外'
+      })`;
     case 'fillByLockState':
       return `${body.target === 'locked' ? 'ロック済み' : 'ロック解除'}セルを色分け`;
     case 'shiftYears':

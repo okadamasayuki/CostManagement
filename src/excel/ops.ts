@@ -2,8 +2,9 @@ import type ExcelJS from 'exceljs';
 import type { LoadedWorkbook, OpDetail, OpResult, OpScope } from './types';
 import type { RangeSpec, RecipeStep, SheetProtectOptions, StepBody } from '../recipe/types';
 import type { RangeRect } from './cellRef';
-import { parseA1Range, rectToA1 } from './cellRef';
+import { colToLetter, parseA1Range, rectToA1 } from './cellRef';
 import { asRecord, asStyle, getSheetProtection } from './exceljsCompat';
+import { resolveColor, type FillRef } from './color';
 import {
   mapNumericYear,
   pairMapper,
@@ -158,9 +159,19 @@ function setLocked(cell: ExcelJS.Cell, locked: boolean): boolean {
 }
 
 function getFillArgb(cell: ExcelJS.Cell): string | undefined {
-  const fill = cell.fill as { type?: string; fgColor?: { argb?: string } } | undefined;
-  if (!fill || fill.type !== 'pattern') return undefined;
-  return fill.fgColor?.argb;
+  return getFillRef(cell)?.argb;
+}
+
+/**
+ * セルの塗りつぶし色を解決して返す。塗りが無ければ null。
+ * テーマ色・古い色番号も実際の色に解決されるため、
+ * 「同じ色のセル」を色の指定方法によらず拾える。
+ */
+export function getFillRef(cell: ExcelJS.Cell): FillRef | null {
+  const fill = cell.fill as { type?: string; pattern?: string; fgColor?: unknown } | undefined;
+  if (!fill || fill.type !== 'pattern') return null;
+  if (fill.pattern === 'none') return null;
+  return resolveColor(fill.fgColor);
 }
 
 function setFill(cell: ExcelJS.Cell, argb: string | null): boolean {
@@ -330,6 +341,46 @@ function opFillRange(
   return detail(
     t,
     `${rectToA1(rect)} の ${count} セルの塗りを${body.colorArgb === null ? '解除' : '変更'}`,
+    count,
+  );
+}
+
+/**
+ * 塗りつぶしの色でロックを切り替える。
+ * 「この色のセルだけ入力させたい」という既存の色分け運用を、
+ * そのままロック設定に変換できる。
+ */
+function opSetLockByFill(
+  t: SheetTarget,
+  body: Extract<StepBody, { op: 'setLockByFill' }>,
+  dryRun: boolean,
+): OpDetail | null {
+  const rect = resolveRange(t.ws, body.range);
+  if (!rect) return null;
+  const wanted = new Set(body.colorKeys);
+  if (wanted.size === 0) return null;
+
+  let count = 0;
+  const ok = forEachCell(t.ws, rect, (cell) => {
+    const ref = getFillRef(cell);
+    const isMatch =
+      body.match === 'in'
+        ? ref !== null && wanted.has(ref.key)
+        : ref === null
+          ? body.includeUnfilled
+          : !wanted.has(ref.key);
+    if (!isMatch) return;
+    if (getLocked(cell) === body.locked) return;
+    count++;
+    if (!dryRun) setLocked(cell, body.locked);
+  });
+  if (!ok) return detail(t, '範囲が大きすぎるため処理を中止しました', 0);
+  if (count === 0) return null;
+  return detail(
+    t,
+    `色が${body.match === 'in' ? '一致' : '不一致'}の ${count} セルを${
+      body.locked ? 'ロック' : 'ロック解除'
+    }`,
     count,
   );
 }
@@ -621,6 +672,9 @@ export async function applyStep(
       case 'fillByLockState':
         d = opFillByLockState(t, body, dryRun);
         break;
+      case 'setLockByFill':
+        d = opSetLockByFill(t, body, dryRun);
+        break;
       case 'shiftYears':
       case 'mapYears':
         d = opReplaceYears(t, body, dryRun, renameLog);
@@ -695,6 +749,8 @@ function makeTextRewriter(body: Extract<StepBody, { op: 'replaceText' }>): TextR
   };
 }
 
+const LOCK_OPS = new Set(['setLock', 'lockAllExcept', 'setLockByFill']);
+
 function buildSummary(
   body: StepBody,
   books: number,
@@ -703,8 +759,60 @@ function buildSummary(
   targetCount: number,
 ): string {
   if (targetCount === 0) return '対象のシートがありませんでした';
-  if (cells === 0) return `対象 ${targetCount} シートを確認しましたが、変更はありませんでした`;
+  if (cells === 0) {
+    // Excel のセルは既定でロック済みなので、「ロックする」操作は
+    // 何も変わらないことが多い。失敗と誤解されないよう理由を添える。
+    if (LOCK_OPS.has(body.op)) {
+      return `対象 ${targetCount} シートは、すでに指定どおりのロック状態でした (変更なし)`;
+    }
+    return `対象 ${targetCount} シートを確認しましたが、変更はありませんでした`;
+  }
   const unit =
     body.op === 'protectSheet' || body.op === 'unprotectSheet' ? `${sheets} シート` : `${cells} 箇所`;
   return `${books} ブック / ${sheets} シート / ${unit} を変更しました`;
+}
+
+
+// ---------------------------------------------------------------------------
+// 使われている塗りつぶし色の列挙
+// ---------------------------------------------------------------------------
+
+export interface UsedColor extends FillRef {
+  /** その色で塗られているセルの数 */
+  count: number;
+  /** 見つかった場所の例 (先頭 1 件) */
+  sample: string;
+}
+
+/**
+ * 対象のシート群で実際に使われている塗りつぶし色を、多い順に列挙する。
+ *
+ * 「どの色が入力欄なのか」はファイルを見ないと分からないため、
+ * 画面上で選ばせるための一覧を作る。
+ */
+export function collectUsedColors(
+  ctx: OpContext,
+  scope: OpScope,
+  limit = 40,
+): UsedColor[] {
+  const found = new Map<string, UsedColor>();
+  for (const t of resolveTargets(ctx, scope)) {
+    const rect = usedRect(t.ws);
+    if (!rect) continue;
+    forEachCell(t.ws, rect, (cell, r, c) => {
+      const ref = getFillRef(cell);
+      if (!ref) return;
+      const hit = found.get(ref.key);
+      if (hit) {
+        hit.count++;
+      } else {
+        found.set(ref.key, {
+          ...ref,
+          count: 1,
+          sample: `${t.ws.name}!${colToLetter(c)}${r}`,
+        });
+      }
+    });
+  }
+  return [...found.values()].sort((a, b) => b.count - a.count).slice(0, limit);
 }

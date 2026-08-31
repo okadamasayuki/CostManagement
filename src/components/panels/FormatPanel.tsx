@@ -13,6 +13,7 @@ import {
   type RangeMode,
 } from '../ui';
 import { rectToA1 } from '../../excel/cellRef';
+import { ColorLockDialog } from './ColorLockDialog';
 import { runOperation, setState, toast, useStore } from '../../state/store';
 
 /**
@@ -26,6 +27,7 @@ export function FormatPanel() {
   const [rangeMode, setRangeMode] = useState<RangeMode>('selection');
   const [a1, setA1] = useState('');
   const [onlyWithValue, setOnlyWithValue] = useState(false);
+  const [showColorLock, setShowColorLock] = useState(false);
 
   const selectionA1 = s.selection ? rectToA1(s.selection) : null;
   const ready = s.books.length > 0;
@@ -114,6 +116,26 @@ export function FormatPanel() {
         </RCol>
       </RGroup>
 
+      <RGroup title="色からロック">
+        <BigButton
+          icon="🔎"
+          label={<>色から<br />ロックを設定</>}
+          primary
+          disabled={!ready}
+          title="実際に使われている色を一覧から選び、その色のセル (またはそれ以外) のロックを切り替えます"
+          onClick={() => setShowColorLock(true)}
+        />
+        <RCol>
+          <div style={{ width: 216 }}>
+            <NoteBox>
+              「<b>黄色が入力欄</b>」のような色分けが既にあるファイルなら、
+              その色を選ぶだけでロック設定を起こせます。
+              ファイル内で実際に使われている色を数えて一覧にします。
+            </NoteBox>
+          </div>
+        </RCol>
+      </RGroup>
+
       <RGroup title="適用先">
         <ScopeSelector scope={s.scope} onChange={(scope) => setState({ scope })} />
       </RGroup>
@@ -133,6 +155,8 @@ export function FormatPanel() {
           </div>
         </RCol>
       </RGroup>
+
+      {showColorLock && <ColorLockDialog onClose={() => setShowColorLock(false)} />}
     </>
   );
 }

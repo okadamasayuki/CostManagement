@@ -31,6 +31,8 @@ export function LockPanel() {
   const [password, setPassword] = useState('');
   const [options, setOptions] = useState<SheetProtectOptions>(DEFAULT_PROTECT_OPTIONS);
   const [alsoUnlock, setAlsoUnlock] = useState(true);
+  // Excel ではシート保護をかけないとロックが効かないため、既定で自動的にかける
+  const [autoProtect, setAutoProtect] = useState(true);
 
   const selectionA1 = s.selection ? rectToA1(s.selection) : null;
   const ready = s.books.length > 0;
@@ -44,23 +46,42 @@ export function LockPanel() {
     return spec;
   }
 
+  /**
+   * ロック操作のあとにシート保護をかける。
+   * Excel ではシート保護を有効にしないとロックが一切効かないため、
+   * 押し忘れを防ぐ意味でも既定で自動実行する。
+   * 手順書には「ロック」「シート保護」の 2 手順として記録される。
+   */
+  async function applyProtectIfNeeded(): Promise<string | undefined> {
+    if (!autoProtect) return '仕上げに「シート保護を有効化」を実行してください。';
+    const r = await runOperation({
+      op: 'protectSheet',
+      password: password || undefined,
+      options,
+    });
+    return `続けてシート保護も有効にしました (${r.changedSheets} シート)。`;
+  }
+
   async function setLock(locked: boolean) {
     const range = resolveRange();
     if (!range) return;
     const r = await runOperation({ op: 'setLock', range, locked });
-    toast(r.changedCells ? 'success' : 'info', r.summary);
+    const extra = await applyProtectIfNeeded();
+    toast(r.changedCells ? 'success' : 'info', r.summary, extra);
   }
 
   async function lockAllExcept() {
     const range = resolveRange();
     if (!range) return;
     const r = await runOperation({ op: 'lockAllExcept', range, alsoUnlockTarget: alsoUnlock });
-    toast(r.changedCells ? 'success' : 'info', r.summary, '仕上げに「シート保護を有効化」を実行してください。');
+    const extra = await applyProtectIfNeeded();
+    toast(r.changedCells ? 'success' : 'info', r.summary, extra);
   }
 
   async function lockWholeSheet(locked: boolean) {
     const r = await runOperation({ op: 'setLock', range: { kind: 'used' }, locked });
-    toast(r.changedCells ? 'success' : 'info', r.summary);
+    const extra = await applyProtectIfNeeded();
+    toast(r.changedCells ? 'success' : 'info', r.summary, extra);
   }
 
   async function protectSheet() {
@@ -145,6 +166,12 @@ export function LockPanel() {
           onClick={() => void unprotectSheet()}
         />
         <RCol>
+          <Check
+            label="ロック操作のあと自動で保護する"
+            checked={autoProtect}
+            onChange={setAutoProtect}
+            title="Excel ではシート保護をかけないとロックが効きません。既定で自動的にかけます。"
+          />
           <Field label="パスワード">
             <input
               type="password"
@@ -179,11 +206,20 @@ export function LockPanel() {
 
       <RGroup title="ヒント">
         <div style={{ width: 246 }}>
-          <NoteBox kind="warn">
+          <NoteBox kind={autoProtect ? 'ok' : 'warn'}>
             Excel では<b>セルのロックは「シートの保護」を有効にして初めて効きます</b>。
             <br />
-            典型的な流れ:
-            <br />① 入力させたい範囲を選ぶ → ②「選択範囲以外をロック」 → ③「シート保護を有効化」
+            {autoProtect ? (
+              <>
+                <b>✓ 自動で保護する設定になっているので、範囲を選んでボタンを押すだけで完了します。</b>
+                <br />
+                「適用先」を<b>全ブック・全シート</b>にしておけば、1 回の操作で全部にかかります。
+              </>
+            ) : (
+              <>
+                自動保護が<b>オフ</b>です。ロックしたあと「シート保護を有効化」を忘れずに押してください。
+              </>
+            )}
           </NoteBox>
         </div>
       </RGroup>

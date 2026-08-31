@@ -127,6 +127,7 @@ const KNOWN_OPS = new Set([
   'unprotectSheet',
   'fillRange',
   'fillByLockState',
+  'setLockByFill',
   'shiftYears',
   'mapYears',
   'replaceText',

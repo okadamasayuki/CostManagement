@@ -77,6 +77,24 @@ export type StepBody =
   | { op: 'unprotectSheet' }
   /** 指定範囲を塗る / 塗りを消す (colorArgb=null で消去) */
   | { op: 'fillRange'; range: RangeSpec; colorArgb: string | null }
+  /**
+   * 塗りつぶしの色を手がかりにロックを切り替える。
+   * 「黄色が入力欄」のような既存の色分け運用があるファイルに対して、
+   * 色からロック設定を起こせる。
+   */
+  | {
+      op: 'setLockByFill';
+      /** 対象にする色の key (excel/color.ts の FillRef.key) */
+      colorKeys: string[];
+      /** 人が読むための色名。実行時の判定には使わない。 */
+      colorLabels?: string[];
+      /** match='in' … 指定色のセル / 'out' … 指定色以外のセル */
+      match: 'in' | 'out';
+      locked: boolean;
+      /** 'out' のとき、色の付いていないセルも対象に含めるか */
+      includeUnfilled: boolean;
+      range: RangeSpec;
+    }
   /** ロック状態に応じて一括で塗る */
   | {
       op: 'fillByLockState';
