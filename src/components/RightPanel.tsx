@@ -39,7 +39,7 @@ function ContextInfo({ view }: { view: SheetView | null }) {
             <div className="note-box warn" style={{ marginBottom: 8 }}>
               まだ変更されていません。内容を確認してから実行してください。
             </div>
-            <OutcomeView outcome={preview.outcome} />
+            <OutcomeView outcome={preview.outcome} testId="preview-details" />
           </div>
         </div>
       )}
@@ -124,10 +124,10 @@ function ContextInfo({ view }: { view: SheetView | null }) {
   );
 }
 
-function OutcomeView({ outcome }: { outcome: StepOutcome }) {
+function OutcomeView({ outcome, testId }: { outcome: StepOutcome; testId?: string }) {
   if (!outcome.details.length) return null;
   return (
-    <ul className="detail-list">
+    <ul className="detail-list" data-testid={testId}>
       {outcome.details.slice(0, 60).map((d, i) => (
         <li key={i}>
           {d.message}

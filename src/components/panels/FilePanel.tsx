@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { BigButton, Btn, Check, Modal, NoteBox, RCol, RGroup } from '../ui';
+import { BigButton, Btn, Check, Field, Modal, NoteBox, RCol, RGroup } from '../ui';
 import { loadFromDirectory, loadFromFiles, isMacroFormat } from '../../excel/loader';
 import { supportsDirectoryPicker } from '../../excel/fsTypes';
 import { applyRename, downloadBlob, saveAllAsZip, saveOne, writeBackToDisk } from '../../excel/saver';
@@ -11,6 +11,7 @@ import {
   currentBook,
   getState,
   revertBook,
+  runOperation,
   setBusy,
   setState,
   toast,
@@ -36,6 +37,7 @@ export function FilePanel() {
       );
       finishLoad(result.books.length, result.skipped.length, result.books.filter((b) => b.loadError).length);
       addBooks(result.books, result.skipped);
+      await applyInitialLock();
     } finally {
       clearBusy();
     }
@@ -56,11 +58,36 @@ export function FilePanel() {
       );
       finishLoad(result.books.length, result.skipped.length, result.books.filter((b) => b.loadError).length);
       addBooks(result.books, result.skipped);
+      await applyInitialLock();
     } catch (e) {
       toast('error', 'フォルダーの読み込みに失敗しました', e instanceof Error ? e.message : String(e));
     } finally {
       clearBusy();
     }
+  }
+
+  /**
+   * 読み込み直後にロック状態をそろえる。
+   *
+   * Excel のセルは既定で全てロック済みなので、そのままだと
+   * 「どこもロックされていない状態から始める」ことができない。
+   * ここで一度そろえておくと、あとは入力させたい所だけを
+   * 触ればよくなる。
+   */
+  async function applyInitialLock() {
+    const mode = getState().initialLockMode;
+    if (mode === 'keep') return;
+    const r = await runOperation(
+      { op: 'setLock', range: { kind: 'sheet' }, locked: mode === 'lock' },
+      { scope: { books: 'all', sheets: 'all' } },
+    );
+    toast(
+      'info',
+      mode === 'lock'
+        ? '読み込んだ全シートをロックしました'
+        : '読み込んだ全シートのロックを外しました',
+      r.summary,
+    );
   }
 
   function finishLoad(loaded: number, skipped: number, failed: number) {
@@ -184,7 +211,7 @@ export function FilePanel() {
           }
         />
         <RCol>
-          <div style={{ fontSize: 10.5, color: 'var(--text-dim)', width: 190, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 10.5, color: 'var(--text-dim)', width: 178, lineHeight: 1.6 }}>
             サブフォルダーも含めて
             <br />
             <b>.xlsx / .xlsm</b> をすべて読み込みます。
@@ -193,9 +220,35 @@ export function FilePanel() {
               <span style={{ color: 'var(--ok)' }}>✓ 元のフォルダーへ直接上書き保存できます</span>
             ) : (
               <span style={{ color: 'var(--warn)' }}>
-                ※ このブラウザーでは ZIP でのダウンロード保存になります
+                ※ ZIP でのダウンロード保存になります
               </span>
             )}
+          </div>
+        </RCol>
+      </RGroup>
+
+      <RGroup title="読み込み時のロック">
+        <RCol>
+          <Field label="">
+            <select
+              data-testid="initial-lock"
+              style={{ width: 186 }}
+              value={s.initialLockMode}
+              onChange={(e) =>
+                setState({ initialLockMode: e.target.value as typeof s.initialLockMode })
+              }
+            >
+              <option value="keep">そのまま (ファイルの設定を使う)</option>
+              <option value="unlock">全シートのロックを外す</option>
+              <option value="lock">全シートをロックする</option>
+            </select>
+          </Field>
+          <div style={{ width: 190 }}>
+            <NoteBox>
+              Excel のセルは<b>既定で全てロック済み</b>です。
+              「ロックを外す」を選ぶと、読み込んだ時点で
+              まっさらな状態から始められます。
+            </NoteBox>
           </div>
         </RCol>
       </RGroup>

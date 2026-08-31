@@ -11,7 +11,7 @@ export function describeRange(range: RangeSpec): string {
     case 'used':
       return 'データが入っている範囲全体';
     case 'sheet':
-      return 'シート全体 (データ範囲)';
+      return 'シート全体 (A1 から、データのある一番右下まで)';
   }
 }
 

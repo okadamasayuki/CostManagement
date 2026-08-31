@@ -3,7 +3,7 @@ import type { SheetView } from '../excel/types';
 import { rectCellCount, rectToA1 } from '../excel/cellRef';
 import { getBlockedAttempts, onBlockedAttempt } from '../security/networkGuard';
 import { describeScope, describeScopeShort } from '../recipe/describe';
-import { setState, useStore } from '../state/store';
+import { useStore } from '../state/store';
 
 export function StatusBar(props: { view: SheetView | null }) {
   const s = useStore();
@@ -43,9 +43,12 @@ export function StatusBar(props: { view: SheetView | null }) {
       {dirty > 0 && <span className="sb-item">未保存 {dirty} ブック</span>}
       <span className="sb-item">記録 {s.recording ? 'ON' : 'OFF'} / {s.recipe.steps.length} 手順</span>
       <span
-        className="sb-item clickable"
-        onClick={() => setState({ activeTab: 'security' })}
-        title="外部通信の遮断状況を表示"
+        className="sb-item"
+        title={
+          blocked === 0
+            ? 'このツールは外部と通信しません'
+            : `${blocked} 件の外部通信を遮断しました`
+        }
       >
         {blocked === 0 ? '🔒 外部通信なし' : `⚠️ 通信を ${blocked} 件遮断`}
       </span>

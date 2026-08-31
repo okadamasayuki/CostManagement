@@ -108,6 +108,20 @@ export function usedRect(ws: ExcelJS.Worksheet): RangeRect | null {
   };
 }
 
+/**
+ * 「シート全体」の範囲。
+ *
+ * ExcelJS の dimensions は「値が入っている最初のセル」から始まるため、
+ * 例えば A 列が空で B 列から表が始まっていると A1 が範囲外になり、
+ * 「すべてロック解除」をしても A1 だけロックされたままになる。
+ * 利用者が言う「シート全体」は A1 からなので、常に A1 起点にする。
+ */
+export function sheetRect(ws: ExcelJS.Worksheet): RangeRect | null {
+  const used = usedRect(ws);
+  if (!used) return null;
+  return { top: 1, left: 1, bottom: used.bottom, right: used.right };
+}
+
 export function resolveRange(ws: ExcelJS.Worksheet, spec: RangeSpec): RangeRect | null {
   if (spec.kind === 'a1') {
     const rect = parseA1Range(spec.a1);
@@ -122,10 +136,8 @@ export function resolveRange(ws: ExcelJS.Worksheet, spec: RangeSpec): RangeRect 
       right: Math.min(rect.right, Math.max(used.right, rect.left)),
     };
   }
-  // 'used' も 'sheet' もデータ範囲を対象にする。
-  // Excel ではセルの既定が「ロック済み」なので、データのない領域は
-  // 触らなくても「ロックされている」状態になる。
-  return usedRect(ws);
+  // 'sheet' は A1 起点、'used' はデータが入っている範囲そのもの
+  return spec.kind === 'sheet' ? sheetRect(ws) : usedRect(ws);
 }
 
 function rectCells(rect: RangeRect): number {
@@ -245,7 +257,7 @@ function opLockAllExcept(
   dryRun: boolean,
 ): OpDetail | null {
   const keep = resolveRange(t.ws, body.range);
-  const all = usedRect(t.ws);
+  const all = sheetRect(t.ws);
   if (!all) return null;
   // 例外範囲がデータ範囲の外にある場合も考慮して和を取る
   const scan: RangeRect = keep
@@ -394,7 +406,7 @@ function opFillByLockState(
   body: Extract<StepBody, { op: 'fillByLockState' }>,
   dryRun: boolean,
 ): OpDetail | null {
-  const rect = usedRect(t.ws);
+  const rect = sheetRect(t.ws);
   if (!rect) return null;
   const wantLocked = body.target === 'locked';
   let count = 0;
@@ -808,7 +820,7 @@ export function collectUsedColors(
 ): UsedColor[] {
   const found = new Map<string, UsedColor>();
   for (const t of resolveTargets(ctx, scope)) {
-    const rect = usedRect(t.ws);
+    const rect = sheetRect(t.ws);
     if (!rect) continue;
     forEachCell(t.ws, rect, (cell, r, c) => {
       const ref = getFillRef(cell);

@@ -145,11 +145,21 @@ button, input, select, textarea { font: inherit; color: inherit; }
   align-items: stretch;
   gap: 0;
   padding: 6px 4px 4px;
-  min-height: 92px;
+  /*
+   * タブを切り替えても中身の位置が上下しないよう、高さを固定する。
+   * 一番背の高いタブ (155px) + 横スクロールバー (8px) 分。
+   */
+  height: 164px;
   overflow-x: auto;
+  overflow-y: hidden;
   /* min-width を 0 にしないと、中身の幅がそのまま画面全体を押し広げてしまう */
   min-width: 0;
+  scrollbar-width: thin;
 }
+.ribbon-panel::-webkit-scrollbar { height: 8px; }
+.ribbon-panel::-webkit-scrollbar-track { background: transparent; }
+.ribbon-panel::-webkit-scrollbar-thumb { background: #c8c6c4; border-radius: 4px; }
+.ribbon-panel::-webkit-scrollbar-thumb:hover { background: #a8a6a4; }
 
 .rgroup {
   display: flex;

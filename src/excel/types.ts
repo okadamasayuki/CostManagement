@@ -79,6 +79,13 @@ export interface SheetView {
   unlockedCount: number;
   /** 値または数式が入っているセル数 */
   usedCellCount: number;
+  /**
+   * シートに実際に中身 (値または書式) がある範囲の右下。
+   * 画面には見栄えのため余分な行・列も描くが、そこは
+   * シートの内容ではないのでロック状態の網掛けを出さない。
+   */
+  contentBottom: number;
+  contentRight: number;
 }
 
 /** 操作の適用範囲 */

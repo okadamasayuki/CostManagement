@@ -62,18 +62,20 @@ export default function App() {
         <span className="app-name">Excel 一括ロック / 年度更新ツール</span>
         <span className="doc-name">{docName}</span>
         <span className="spacer" />
-        <button
+        <span
           className={`offline-badge${blockedCount ? ' alarm' : ''}`}
-          onClick={() => setState({ activeTab: 'security' })}
-          type="button"
-          title="外部通信の状況を表示"
+          title={
+            blockedCount
+              ? `${blockedCount} 件の外部通信を遮断しました (F12 の「ネットワーク」タブでも確認できます)`
+              : 'このツールは外部と通信しません。読み込んだファイルはブラウザー内だけで処理されます。'
+          }
         >
           {blockedCount > 0
             ? `⚠️ 通信を ${blockedCount} 件遮断`
             : isHosted()
               ? '🔒 データは外部に出ません'
               : '🔒 完全オフライン動作'}
-        </button>
+        </span>
         <button className="offline-badge" onClick={() => setShowAbout(true)} type="button">
           ？ 使い方
         </button>

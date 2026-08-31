@@ -144,6 +144,38 @@ await check('シートタブが 3 枚出る', async () => {
 
 await page.screenshot({ path: join(SHOTS, '01-loaded.png') });
 
+console.log('\n\x1b[1m読み込み時のロック状態\x1b[0m');
+
+await check('「全シートのロックを外す」で読み込むと最初から全解除になる', async () => {
+  // いったん閉じてから、設定を変えて読み込み直す
+  page.on('dialog', (d) => d.accept());
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await page.click('.rbtn:has-text("すべて閉じる")');
+  await waitUntil(async () => (await page.locator('.tree-file').count()) === 0, '閉じられない');
+
+  await page.selectOption('[data-testid="initial-lock"]', 'unlock');
+  await page.setInputFiles('input[webkitdirectory]', SAMPLE);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, '読み込めない');
+  await waitUntil(async () => {
+    const status = await page.textContent('.statusbar');
+    // 🔒 ロック済み が 0 件になっているはず
+    return /🔒 0 \//.test(status);
+  }, `ロックが解除されていない: ${await page.textContent('.statusbar')}`);
+
+  // 画面上もロックの網掛けが消えていること
+  assert(
+    (await page.locator('.cell.ov-locked').count()) === 0,
+    'ロック済みの表示が残っている',
+  );
+
+  // 設定を戻して読み込み直す
+  await page.click('.rbtn:has-text("すべて閉じる")');
+  await waitUntil(async () => (await page.locator('.tree-file').count()) === 0, '閉じられない');
+  await page.selectOption('[data-testid="initial-lock"]', 'keep');
+  await page.setInputFiles('input[webkitdirectory]', SAMPLE);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, '読み込み直せない');
+});
+
 console.log('\n\x1b[1mフォルダーを指定して一括処理\x1b[0m');
 
 await check('ツリーのフォルダーから対象を指定できる', async () => {
@@ -174,10 +206,10 @@ await check('そのフォルダー配下のブックだけが対象になる', a
   await page.click('.rbtn-lg:has-text("変更内容を")');
   await page.waitForSelector('.rp-title:has-text("試算結果")', { timeout: 15000 });
   await waitUntil(
-    async () => (await page.locator('.detail-list li').count()) > 0,
+    async () => (await page.locator('[data-testid="preview-details"] li').count()) > 0,
     '試算の内訳が出ない',
   );
-  const where = await page.locator('.detail-list .where').allTextContents();
+  const where = await page.locator('[data-testid="preview-details"] .where').allTextContents();
   assert(where.length > 0, '内訳が空');
   assert(
     where.every((w) => w.includes('tokyo')),
@@ -191,7 +223,7 @@ await check('最上位を選ぶと全ブックが対象になる', async () => {
   await page.selectOption('[data-testid="scope-folder"]', '');
   await page.click('.rbtn-lg:has-text("変更内容を")');
   await waitUntil(async () => {
-    const w = await page.locator('.detail-list .where').allTextContents();
+    const w = await page.locator('[data-testid="preview-details"] .where').allTextContents();
     return w.some((x) => x.includes('osaka')) && w.some((x) => x.includes('tokyo'));
   }, '最上位を選んでも全ブックが対象にならない');
 });
@@ -212,10 +244,10 @@ await check('文字列の置換もフォルダー指定の中だけに効く', a
   await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和7"]', '原価集計表');
   await page.click('.rgroup:has-text("文字列の置換") .rbtn:has-text("試算")');
   await waitUntil(async () => {
-    const w = await page.locator('.detail-list .where').allTextContents();
+    const w = await page.locator('[data-testid="preview-details"] .where').allTextContents();
     return w.length > 0;
   }, '文字列置換の試算結果が出ない');
-  const where = await page.locator('.detail-list .where').allTextContents();
+  const where = await page.locator('[data-testid="preview-details"] .where').allTextContents();
   assert(
     where.every((w) => w.includes('tokyo')),
     `フォルダー外まで対象になっている: ${where.join(' | ')}`,
@@ -603,14 +635,33 @@ await check('WebSocket が使用不能になっている', async () => {
   assert(r === 'NetworkBlockedError', `WebSocket の結果: ${r}`);
 });
 
-await check('遮断がステータスバーに表示される', async () => {
+await check('遮断がステータスバーとタイトルバーに表示される', async () => {
   const text = await page.textContent('.statusbar');
   assert(text.includes('遮断'), `ステータスバー: ${text}`);
+  const badge = await page.textContent('.offline-badge');
+  assert(badge.includes('遮断'), `タイトルバー: ${badge}`);
 });
 
-await page.click('.ribbon-tab:has-text("セキュリティ")');
-await page.waitForSelector('.rgroup-title:has-text("遮断した通信")');
-await page.screenshot({ path: join(SHOTS, '06-security.png') });
+await check('セキュリティタブは無い', async () => {
+  const tabs = await page.locator('.ribbon-tab').allTextContents();
+  assert(!tabs.some((t) => t.includes('セキュリティ')), `タブ: ${tabs.join(', ')}`);
+  assert(tabs.length === 5, `タブ数: ${tabs.length}`);
+});
+
+await check('どのタブに切り替えてもリボンの高さが変わらない', async () => {
+  const tabs = await page.locator('.ribbon-tab').allTextContents();
+  const heights = [];
+  for (const t of tabs) {
+    await page.click(`.ribbon-tab:has-text("${t}")`);
+    heights.push(await page.locator('.ribbon-panel').evaluate((el) => el.clientHeight));
+  }
+  assert(
+    new Set(heights).size === 1,
+    `タブごとに高さが違う: ${tabs.map((t, i) => `${t}=${heights[i]}`).join(', ')}`,
+  );
+});
+
+await page.screenshot({ path: join(SHOTS, '06-tabs.png') });
 
 // --------------------------------------------------------------------------
 // GitHub Pages のようにサーバーから配信した場合の検証。
@@ -640,9 +691,10 @@ await hostedPage.waitForSelector('.app');
 await check('サーバー配信であることが画面に表示される', async () => {
   const badge = await hostedPage.textContent('.offline-badge');
   assert(badge.includes('外部に出ません'), `バッジ: ${badge}`);
-  await hostedPage.click('.ribbon-tab:has-text("セキュリティ")');
+  // 起動元の説明とダウンロードの案内は「ファイル」タブに出る
+  await hostedPage.click('.ribbon-tab:has-text("ファイル")');
   const body = await hostedPage.textContent('.ribbon-panel');
-  assert(body.includes('起動元: サーバー'), '起動元の表示がない');
+  assert(body.includes('サーバーから開いています'), `起動元の案内がない: ${body.slice(0, 200)}`);
   assert(body.includes('ツール本体を保存'), 'オフライン保存の案内がない');
 });
 

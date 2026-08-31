@@ -18,7 +18,7 @@ import { DEFAULT_PROTECT_OPTIONS, DEFAULT_YEAR_TARGETS } from '../src/recipe/typ
 import { replaceYearsInString, shiftMapper, pairMapper, replaceEraYears } from '../src/excel/yearShift';
 import { parseRecipe, runRecipe } from '../src/recipe/runner';
 import { recipeToJson } from '../src/recipe/document';
-import { isCellLocked } from '../src/excel/view';
+import { buildSheetView, isCellLocked } from '../src/excel/view';
 
 let passed = 0;
 let failed = 0;
@@ -217,6 +217,105 @@ async function main(): Promise<void> {
     const fill = ws.getCell('B2').fill as { fgColor?: { argb?: string } };
     assert.equal(fill?.fgColor?.argb, 'FFFFFF00', 'B2 が黄色になるはず');
     assert.equal(ws.getCell('A1').fill, undefined, 'ロック済みの A1 は塗られないはず');
+  });
+
+  // ------------------------------------------------------------------------
+  section('画面表示 (空セルのロック状態)');
+
+  await test('値の無いセルでも、ロックを外したら画面上も解除に見える', async () => {
+    // A1 は空のまま、B1 以降にだけ値を入れる。
+    // 「すべてロック解除」のあと、A1 が画面上でロック済みに
+    // 見えてしまわないことを確かめる。
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      ws.getCell('B1').value = '見出し';
+      ws.getCell('B2').value = 100;
+    });
+    // 「シート全体 → すべてロック解除」と同じ操作
+    await applyStep(
+      step({ op: 'setLock', range: { kind: 'sheet' }, locked: false }),
+      ctx([book]),
+    );
+
+    const ws = book.wb.getWorksheet('S')!;
+    // モデル上は解除されている
+    assert.equal(isCellLocked(ws.getCell('A1')), false, 'モデル上は A1 も解除されるはず');
+
+    // 画面用のスナップショットにも反映されていること
+    const view = buildSheetView(ws, 1);
+    const a1 = view.cells.get('1:1');
+    assert.ok(a1, 'A1 が画面用のデータに含まれていない (ロック済みとして描画されてしまう)');
+    assert.equal(a1!.locked, false, 'A1 が画面上でロック済みになっている');
+    assert.equal(view.unlockedCount >= 2, true, `解除セル数: ${view.unlockedCount}`);
+  });
+
+  await test('塗りつぶしだけした空セルも画面に出る', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      ws.getCell('B1').value = 'x';
+      // A1 は値なしで色だけ付ける (入力欄の色分けでよくある)
+      ws.getCell('A1').fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFFF00' },
+      };
+    });
+    const view = buildSheetView(book.wb.getWorksheet('S')!, 1);
+    const a1 = view.cells.get('1:1');
+    assert.ok(a1, '色を付けた空セルが画面用のデータに含まれていない');
+    assert.equal(a1!.fillArgb, 'FFFFFF00', '色が反映されていない');
+  });
+
+  await test('「シート全体」は A1 起点、「データ範囲」は表の左上起点', async () => {
+    // A 列と 1 行目が空で、B2 から表が始まっているケース。
+    // ExcelJS の dimensions は B2 起点になるため、そのまま使うと
+    // A 列と 1 行目が処理されない。
+    const make = () =>
+      makeBook('b1', 'a.xlsx', (wb) => {
+        const ws = wb.addWorksheet('S');
+        ws.getCell('B2').value = '見出し';
+        ws.getCell('C3').value = 1;
+      });
+
+    const whole = make();
+    await applyStep(step({ op: 'setLock', range: { kind: 'sheet' }, locked: false }), ctx([whole]));
+    const w = whole.wb.getWorksheet('S')!;
+    assert.equal(isCellLocked(w.getCell('A1')), false, 'シート全体なら A1 も解除されるはず');
+    assert.equal(isCellLocked(w.getCell('B2')), false);
+    assert.equal(isCellLocked(w.getCell('C3')), false);
+
+    const dataOnly = make();
+    await applyStep(step({ op: 'setLock', range: { kind: 'used' }, locked: false }), ctx([dataOnly]));
+    const d = dataOnly.wb.getWorksheet('S')!;
+    assert.equal(isCellLocked(d.getCell('A1')), true, 'データ範囲は表の左上からなので A1 は対象外');
+    assert.equal(isCellLocked(d.getCell('B2')), false);
+  });
+
+  await test('「選択範囲以外をロック」も A1 を取りこぼさない', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      ws.getCell('B2').value = '見出し';
+      ws.getCell('C3').value = 1;
+      // 事前に A1 を解除しておく (再ロックされるべき)
+      ws.getCell('A1').protection = { locked: false };
+    });
+    await applyStep(
+      step({ op: 'lockAllExcept', range: { kind: 'a1', a1: 'C3' }, alsoUnlockTarget: true }),
+      ctx([book]),
+    );
+    const ws = book.wb.getWorksheet('S')!;
+    assert.equal(isCellLocked(ws.getCell('C3')), false, '指定範囲は入力可能');
+    assert.equal(isCellLocked(ws.getCell('A1')), true, 'A1 も再ロックされるはず');
+    assert.equal(isCellLocked(ws.getCell('B2')), true);
+  });
+
+  await test('何も無いセルは画面用のデータに含めない (数が膨大になるため)', () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      wb.addWorksheet('S').getCell('A1').value = 'x';
+    });
+    const view = buildSheetView(book.wb.getWorksheet('S')!, 1);
+    assert.ok(view.cells.get('1:1'), 'A1 は含まれるはず');
+    assert.equal(view.cells.get('5:5'), undefined, '何も無いセルは含めない');
   });
 
   // ------------------------------------------------------------------------

@@ -304,7 +304,11 @@ export function Grid(props: GridProps) {
           w={w}
           h={hh}
           spillW={spillWidth(view, cv, r, c, w)}
-          showLockOverlay={showLockOverlay}
+          // シートの内容がある範囲の外は、見栄えのために描いているだけなので
+          // ロック状態の網掛けは出さない
+          showLockOverlay={
+            showLockOverlay && r <= view.contentBottom && c <= view.contentRight
+          }
         />,
       );
     }

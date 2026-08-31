@@ -17,7 +17,7 @@ import type { RunReport } from '../recipe/runner';
  * 保持し、変更時に version を進めて再描画を促す方式にしている。
  */
 
-export type RibbonTab = 'file' | 'lock' | 'format' | 'year' | 'recipe' | 'security';
+export type RibbonTab = 'file' | 'lock' | 'format' | 'year' | 'recipe';
 
 export interface Toast {
   id: number;
@@ -61,6 +61,12 @@ export interface AppState {
   lastRunReport: RunReport | null;
   /** 直前の操作を手順として記録するか */
   recording: boolean;
+  /**
+   * ファイルを読み込んだ直後にロック状態をそろえるかどうか。
+   * Excel のセルは既定で全てロック済みのため、
+   * 「まっさらな状態から始めたい」場合に unlock を選ぶ。
+   */
+  initialLockMode: 'keep' | 'unlock' | 'lock';
   /** 試算 (dry run) の結果。実行前の確認に使う。 */
   preview: { label: string; outcome: StepOutcome } | null;
   /**
@@ -88,6 +94,7 @@ let state: AppState = {
   showLockOverlay: true,
   lastRunReport: null,
   recording: true,
+  initialLockMode: 'keep',
   preview: null,
   docVersion: 0,
 };

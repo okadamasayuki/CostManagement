@@ -2,7 +2,13 @@ import type ExcelJS from 'exceljs';
 import type { CellKind, CellView, SheetView } from './types';
 import { applyNumFmt, charWidthToPx, colorToArgb, pointsToPx } from './format';
 import { parseA1Range } from './cellRef';
-import { asRecord, getMerges, getSheetProtection } from './exceljsCompat';
+import {
+  asRecord,
+  forEachExistingCell,
+  getMerges,
+  getSheetProtection,
+  hasAnyStyle,
+} from './exceljsCompat';
 
 /** 空のシートでも最低これだけの行/列は描画して、Excel らしい見た目を保つ */
 const MIN_ROWS = 40;
@@ -91,36 +97,37 @@ export function buildSheetView(ws: ExcelJS.Worksheet, index: number): SheetView 
   let unlockedCount = 0;
   let usedCellCount = 0;
 
-  ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber > MAX_RENDER_ROWS) return;
+  // 値の無いセルでも、書式やロック設定を持っていれば画面に出す。
+  // (「ロックを外したが空欄」のセルが、ロック済みに見えてしまうのを防ぐ)
+  forEachExistingCell(ws, MAX_RENDER_ROWS, MAX_RENDER_COLS, (cell, rowNumber, colNumber) => {
+    const numFmt = cell.numFmt;
+    const extracted = extractCellValue(cell.value, numFmt);
+    const styled = hasAnyStyle(cell);
+    // 値も書式も無いセルは描画しない (数が膨大になるため)
+    if (extracted.kind === 'blank' && !styled) return;
+
     maxRow = Math.max(maxRow, rowNumber);
-    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      if (colNumber > MAX_RENDER_COLS) return;
-      maxCol = Math.max(maxCol, colNumber);
+    maxCol = Math.max(maxCol, colNumber);
 
-      const numFmt = cell.numFmt;
-      const extracted = extractCellValue(cell.value, numFmt);
-      const locked = isCellLocked(cell);
-      if (locked) lockedCount++;
-      else unlockedCount++;
-      if (extracted.kind !== 'blank') usedCellCount++;
+    const locked = isCellLocked(cell);
+    if (locked) lockedCount++;
+    else unlockedCount++;
+    if (extracted.kind !== 'blank') usedCellCount++;
 
-      const fill = cell.fill as { type?: string; fgColor?: unknown } | undefined;
-      const fillArgb =
-        fill && fill.type === 'pattern' ? colorToArgb(fill.fgColor) : undefined;
+    const fill = cell.fill as { type?: string; fgColor?: unknown } | undefined;
+    const fillArgb = fill && fill.type === 'pattern' ? colorToArgb(fill.fgColor) : undefined;
 
-      cells.set(`${rowNumber}:${colNumber}`, {
-        text: extracted.text,
-        raw: extracted.raw,
-        kind: extracted.kind,
-        locked,
-        fillArgb,
-        fontArgb: colorToArgb(cell.font?.color),
-        bold: cell.font?.bold ?? undefined,
-        italic: cell.font?.italic ?? undefined,
-        align: alignOf(cell, extracted.kind),
-        numFmt,
-      });
+    cells.set(`${rowNumber}:${colNumber}`, {
+      text: extracted.text,
+      raw: extracted.raw,
+      kind: extracted.kind,
+      locked,
+      fillArgb,
+      fontArgb: colorToArgb(cell.font?.color),
+      bold: cell.font?.bold ?? undefined,
+      italic: cell.font?.italic ?? undefined,
+      align: alignOf(cell, extracted.kind),
+      numFmt,
     });
   });
 
@@ -148,6 +155,8 @@ export function buildSheetView(ws: ExcelJS.Worksheet, index: number): SheetView 
     maxCol = Math.max(maxCol, Math.min(rect.right, MAX_RENDER_COLS));
   }
 
+  const contentBottom = maxRow;
+  const contentRight = maxCol;
   const rowCount = Math.min(Math.max(maxRow + 8, MIN_ROWS), MAX_RENDER_ROWS);
   const colCount = Math.min(Math.max(maxCol + 3, MIN_COLS), MAX_RENDER_COLS);
 
@@ -176,6 +185,8 @@ export function buildSheetView(ws: ExcelJS.Worksheet, index: number): SheetView 
     lockedCount,
     unlockedCount,
     usedCellCount,
+    contentBottom,
+    contentRight,
   };
 }
 

@@ -5,7 +5,6 @@ import { LockPanel } from './panels/LockPanel';
 import { FormatPanel } from './panels/FormatPanel';
 import { YearPanel } from './panels/YearPanel';
 import { RecipePanel } from './panels/RecipePanel';
-import { SecurityPanel } from './panels/SecurityPanel';
 
 const TABS: Array<{ id: RibbonTab; label: string }> = [
   { id: 'file', label: 'ファイル' },
@@ -13,7 +12,6 @@ const TABS: Array<{ id: RibbonTab; label: string }> = [
   { id: 'format', label: '書式・色' },
   { id: 'year', label: '年度更新' },
   { id: 'recipe', label: '手順書' },
-  { id: 'security', label: 'セキュリティ' },
 ];
 
 export function Ribbon() {
@@ -38,7 +36,6 @@ export function Ribbon() {
         {s.activeTab === 'format' && <FormatPanel />}
         {s.activeTab === 'year' && <YearPanel />}
         {s.activeTab === 'recipe' && <RecipePanel />}
-        {s.activeTab === 'security' && <SecurityPanel />}
       </div>
     </div>
   );

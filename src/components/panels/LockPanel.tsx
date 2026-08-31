@@ -79,7 +79,7 @@ export function LockPanel() {
   }
 
   async function lockWholeSheet(locked: boolean) {
-    const r = await runOperation({ op: 'setLock', range: { kind: 'used' }, locked });
+    const r = await runOperation({ op: 'setLock', range: { kind: 'sheet' }, locked });
     const extra = await applyProtectIfNeeded();
     toast(r.changedCells ? 'success' : 'info', r.summary, extra);
   }
