@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      ============================================================
+      外部通信の全面遮断 (Content Security Policy)
+      ------------------------------------------------------------
+      connect-src 'none' : fetch / XHR / WebSocket / EventSource /
+                           sendBeacon を全てブラウザ側で禁止する。
+      default-src 'none' : 既定で一切の外部リソース読み込みを禁止。
+      form-action 'none' : フォーム送信による情報送出を禁止。
+      img/font は data: と blob: のみ (自己完結リソース) を許可。
+      ブラウザ自身が強制するため、アプリのバグや将来の改変でも
+      社内ファイルの内容が外部へ出ることはない。
+      ============================================================
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'none';
+        script-src 'unsafe-inline' 'unsafe-eval' blob:;
+        style-src 'unsafe-inline';
+        img-src data: blob:;
+        font-src data:;
+        media-src data: blob:;
+        worker-src blob:;
+        connect-src 'none';
+        form-action 'none';
+        frame-src 'none';
+        object-src 'none';
+        base-uri 'none';
+      "
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Excel 一括ロック / 年度更新ツール</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
