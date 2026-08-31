@@ -10,15 +10,24 @@ import { RightPanel } from './components/RightPanel';
 import { BusyOverlay, Toasts } from './components/Toasts';
 import { Btn, Modal, NoteBox } from './components/ui';
 import { buildSheetView } from './excel/view';
-import { getBlockedAttempts, onBlockedAttempt } from './security/networkGuard';
+import {
+  describeAttempt,
+  getBlockedAttempts,
+  onBlockedAttempt,
+  type BlockedAttempt,
+} from './security/networkGuard';
 import { isHosted } from './security/selfCopy';
 import { currentBook, currentSheet, setState, touch, useStore } from './state/store';
 
 export default function App() {
   const s = useStore();
   const [showAbout, setShowAbout] = useState(false);
-  const [blockedCount, setBlockedCount] = useState(getBlockedAttempts().length);
-  useEffect(() => onBlockedAttempt((l) => setBlockedCount(l.length)), []);
+  const [blocked, setBlocked] = useState<BlockedAttempt[]>(getBlockedAttempts());
+  useEffect(() => onBlockedAttempt(setBlocked), []);
+  // 外へデータを送ろうとしたものだけを警告する。
+  // 読み込みが止まっただけのもの (ブラウザーが探すアイコンなど) は
+  // 情報として残すが、赤くはしない。
+  const sendAttempts = blocked.filter((b) => b.kind === 'send');
 
   const book = currentBook();
   const ws = currentSheet();
@@ -63,15 +72,12 @@ export default function App() {
         <span className="doc-name">{docName}</span>
         <span className="spacer" />
         <span
-          className={`offline-badge${blockedCount ? ' alarm' : ''}`}
-          title={
-            blockedCount
-              ? `${blockedCount} 件の外部通信を遮断しました (F12 の「ネットワーク」タブでも確認できます)`
-              : 'このツールは外部と通信しません。読み込んだファイルはブラウザー内だけで処理されます。'
-          }
+          data-testid="guard-badge"
+          className={`offline-badge${sendAttempts.length ? ' alarm' : ''}`}
+          title={buildGuardTooltip(blocked, sendAttempts)}
         >
-          {blockedCount > 0
-            ? `⚠️ 通信を ${blockedCount} 件遮断`
+          {sendAttempts.length > 0
+            ? `⚠️ 送信を ${sendAttempts.length} 件遮断`
             : isHosted()
               ? '🔒 データは外部に出ません'
               : '🔒 完全オフライン動作'}
@@ -126,6 +132,30 @@ export default function App() {
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
     </div>
   );
+}
+
+/**
+ * 遮断の状況をマウスオーバーで見せる文章を作る。
+ * セキュリティタブを廃止したので、何が止められたのかを
+ * ここで確認できるようにしておく。
+ */
+function buildGuardTooltip(all: BlockedAttempt[], sends: BlockedAttempt[]): string {
+  const lines: string[] = [];
+  if (sends.length) {
+    lines.push(`⚠️ 外部へデータを送ろうとした試みを ${sends.length} 件遮断しました:`);
+    lines.push(...sends.slice(-5).map(describeAttempt));
+    lines.push('');
+  } else {
+    lines.push('このツールは外部と通信しません。');
+    lines.push('読み込んだファイルはブラウザー内だけで処理されます。');
+  }
+  const resources = all.filter((b) => b.kind === 'resource');
+  if (resources.length) {
+    lines.push(`※ 外部リソースの読み込みを ${resources.length} 件止めました`);
+    lines.push('  (データの送信ではありません。ブラウザーや拡張機能によるものです)');
+    lines.push(...resources.slice(-3).map(describeAttempt));
+  }
+  return lines.join('\n');
 }
 
 /** 入力欄の文字列を ExcelJS の値に変換する */

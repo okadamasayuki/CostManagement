@@ -124,7 +124,7 @@ await page.waitForSelector('.app');
 console.log('\n\x1b[1m画面の初期表示\x1b[0m');
 
 await check('タイトルバーにオフライン表示が出る', async () => {
-  const text = await page.textContent('.offline-badge');
+  const text = await page.textContent('[data-testid="guard-badge"]');
   assert(text.includes('完全オフライン'), `実際: ${text}`);
 });
 
@@ -492,8 +492,11 @@ await check('セルを選んで色を押すと、その場で塗られる', asyn
   }, '色を押してもセルが塗られない');
 });
 
-await check('「塗りなし」を押すと塗りつぶしが解除される', async () => {
-  await page.click('.swatches .swatch.none');
+await check('「色を消す」を押すと塗りつぶしが解除される', async () => {
+  // 斜線の四角では意味が伝わらないため、文字のボタンにしてある
+  const label = await page.textContent('.swatches .clear-fill');
+  assert(/色を消す/.test(label), `ボタンの表記: ${label}`);
+  await page.click('.swatches .clear-fill');
   await waitUntil(async () => {
     const cell = page.locator('.cell', { hasText: '材料費' }).first();
     const bg = await cell.evaluate((el) => getComputedStyle(el).backgroundColor);
@@ -772,7 +775,7 @@ await check('WebSocket が使用不能になっている', async () => {
 await check('遮断がステータスバーとタイトルバーに表示される', async () => {
   const text = await page.textContent('.statusbar');
   assert(text.includes('遮断'), `ステータスバー: ${text}`);
-  const badge = await page.textContent('.offline-badge');
+  const badge = await page.textContent('[data-testid="guard-badge"]');
   assert(badge.includes('遮断'), `タイトルバー: ${badge}`);
 });
 
@@ -823,7 +826,7 @@ await hostedPage.goto(`${origin}/`);
 await hostedPage.waitForSelector('.app');
 
 await check('サーバー配信であることが画面に表示される', async () => {
-  const badge = await hostedPage.textContent('.offline-badge');
+  const badge = await hostedPage.textContent('[data-testid="guard-badge"]');
   assert(badge.includes('外部に出ません'), `バッジ: ${badge}`);
   // 起動元の説明とダウンロードの案内は「ファイル」タブに出る
   await hostedPage.click('.ribbon-tab:has-text("ファイル")');
@@ -849,10 +852,58 @@ await check('ページ本体以外に通信が発生しない', async () => {
   assert(baseline === 1, `初期読み込みが ${baseline} 件 (期待: 1 件): ${hostedRequests.join(', ')}`);
 });
 
+await check('ブラウザーが favicon を探しに行かない', async () => {
+  // アイコンの指定が無いと /favicon.ico が要求され、CSP に引っかかって
+  // 「遮断しました」と赤く出てしまう。データ送信ではないので紛らわしい。
+  const hasIcon = await hostedPage.locator('link[rel="icon"]').count();
+  assert(hasIcon > 0, 'favicon の指定が無い');
+  const iconHref = await hostedPage.locator('link[rel="icon"]').getAttribute('href');
+  assert(iconHref.startsWith('data:'), `アイコンが外部参照になっている: ${iconHref.slice(0, 40)}`);
+  assert(
+    !hostedRequests.some((u) => u.includes('favicon')),
+    `favicon が要求されている: ${hostedRequests.join(', ')}`,
+  );
+});
+
+await check('資源の読み込みが止まっただけなら警告色にしない', async () => {
+  // 拡張機能などが画像を差し込むと CSP に引っかかるが、
+  // データが出ようとしたわけではないので赤くしない
+  await hostedPage.evaluate(() => {
+    const img = document.createElement('img');
+    img.src = '/blocked-by-csp.png';
+    document.body.appendChild(img);
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  const badge = await hostedPage.textContent('[data-testid="guard-badge"]');
+  assert(!badge.includes('遮断'), `資源の遮断で警告色になっている: ${badge}`);
+  const tip = await hostedPage.locator('[data-testid="guard-badge"]').getAttribute('title');
+  assert(/外部リソースの読み込みを/.test(tip), `説明が出ていない: ${tip}`);
+});
+
+await check('本当の送信は遮断して警告する', async () => {
+  await hostedPage.evaluate(() => {
+    try {
+      // eslint-disable-next-line no-undef
+      fetch('https://example.com/leak');
+    } catch {
+      /* 遮断される */
+    }
+  });
+  await waitUntil(
+    async () => (await hostedPage.textContent('[data-testid="guard-badge"]')).includes('送信を'),
+    '送信の遮断が警告として出ない',
+  );
+  const tip = await hostedPage.locator('[data-testid="guard-badge"]').getAttribute('title');
+  assert(/送ろうとした試み/.test(tip), `説明が出ていない: ${tip}`);
+  assert(/example\.com/.test(tip), `宛先が出ていない: ${tip}`);
+});
+
 await check('サーバー配信でも Excel を処理できる', async () => {
   const text = await hostedPage.textContent('.grid-canvas');
   assert(text.includes('2025年度'), '年度更新が効いていない');
-  assert(hostedErrors.length === 0, `JS エラー: ${hostedErrors[0]}`);
+  // 上のテストで意図的に起こした遮断は除く
+  const real = hostedErrors.filter((e) => !e.includes('本ツールでは使用できません'));
+  assert(real.length === 0, `JS エラー: ${real[0]}`);
 });
 
 await hostedPage.screenshot({ path: join(SHOTS, '07-hosted.png') });

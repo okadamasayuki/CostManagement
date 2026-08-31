@@ -18,13 +18,19 @@ export interface BlockedAttempt {
   api: string;
   target: string;
   at: Date;
+  /**
+   * 'send'     … 外へデータを送ろうとした (本当に警告すべきもの)
+   * 'resource' … 外部リソースの読み込みが止まっただけ
+   *              (ブラウザーが探すアイコン、拡張機能が差し込む画像など)
+   */
+  kind: 'send' | 'resource';
 }
 
 const blocked: BlockedAttempt[] = [];
 const listeners = new Set<(list: BlockedAttempt[]) => void>();
 
-function record(api: string, target: unknown): void {
-  blocked.push({ api, target: String(target).slice(0, 300), at: new Date() });
+function record(api: string, target: unknown, kind: BlockedAttempt['kind'] = 'send'): void {
+  blocked.push({ api, target: String(target).slice(0, 300), at: new Date(), kind });
   listeners.forEach((fn) => fn([...blocked]));
   // 開発者が気付けるようコンソールにも残す
   console.warn(`[外部通信ガード] ${api} への呼び出しを遮断しました:`, target);
@@ -37,6 +43,16 @@ export function onBlockedAttempt(fn: (list: BlockedAttempt[]) => void): () => vo
 
 export function getBlockedAttempts(): BlockedAttempt[] {
   return [...blocked];
+}
+
+/** 外へデータを送ろうとした試みだけを返す */
+export function getSendAttempts(): BlockedAttempt[] {
+  return blocked.filter((b) => b.kind === 'send');
+}
+
+/** 画面に出す説明文 */
+export function describeAttempt(b: BlockedAttempt): string {
+  return `${b.at.toLocaleTimeString('ja-JP')}  ${b.api} → ${b.target}`;
 }
 
 class NetworkBlockedError extends Error {
@@ -125,8 +141,14 @@ export function installNetworkGuard(): void {
   define('RTCPeerConnection', BlockedRTC);
   define('webkitRTCPeerConnection', BlockedRTC);
 
-  // CSP 違反 (= 何かが外部へ出ようとした) も記録する
+  // CSP 違反も記録する。
+  // ただし connect-src / form-action 以外は「読み込みが止まった」だけで、
+  // データが外へ出ようとしたわけではないので区別する。
+  const SEND_DIRECTIVES = ['connect-src', 'form-action'];
   window.addEventListener('securitypolicyviolation', (e) => {
-    record(`CSP:${e.violatedDirective}`, e.blockedURI);
+    const kind = SEND_DIRECTIVES.some((d) => e.violatedDirective.startsWith(d))
+      ? 'send'
+      : 'resource';
+    record(`CSP:${e.violatedDirective}`, e.blockedURI, kind);
   });
 }

@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import type { SheetView } from '../excel/types';
 import { rectCellCount, rectToA1 } from '../excel/cellRef';
-import { getBlockedAttempts, onBlockedAttempt } from '../security/networkGuard';
+import { getSendAttempts, onBlockedAttempt } from '../security/networkGuard';
 import { describeScope, describeScopeShort } from '../recipe/describe';
 import { useStore } from '../state/store';
 
 export function StatusBar(props: { view: SheetView | null }) {
   const s = useStore();
   const { view } = props;
-  const [blocked, setBlocked] = useState(getBlockedAttempts().length);
-  useEffect(() => onBlockedAttempt((list) => setBlocked(list.length)), []);
+  const [blocked, setBlocked] = useState(getSendAttempts().length);
+  useEffect(
+    () => onBlockedAttempt((list) => setBlocked(list.filter((b) => b.kind === 'send').length)),
+    [],
+  );
 
   const dirty = s.books.filter((b) => b.dirty).length;
 
@@ -47,10 +50,10 @@ export function StatusBar(props: { view: SheetView | null }) {
         title={
           blocked === 0
             ? 'このツールは外部と通信しません'
-            : `${blocked} 件の外部通信を遮断しました`
+            : `外部へデータを送ろうとした試みを ${blocked} 件遮断しました`
         }
       >
-        {blocked === 0 ? '🔒 外部通信なし' : `⚠️ 通信を ${blocked} 件遮断`}
+        {blocked === 0 ? '🔒 外部通信なし' : `⚠️ 送信を ${blocked} 件遮断`}
       </span>
     </div>
   );

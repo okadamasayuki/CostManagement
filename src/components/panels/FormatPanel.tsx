@@ -41,8 +41,8 @@ export function FormatPanel() {
     if (!selectionA1) {
       toast(
         'info',
-        argb === null ? '「塗りなし」を選びました' : '色を選びました',
-        'セルを選んでから色を押すと、その場で塗れます。',
+        argb === null ? '「色を消す」を選びました' : '色を選びました',
+        'セルを選んでから押すと、その場で反映されます。',
       );
       return;
     }
@@ -82,7 +82,7 @@ export function FormatPanel() {
               'セルを選んでから色を押すと、その場で塗れます。'
             )}
             <br />
-            斜線は<b>塗りなし</b>、右端の四角で任意の色を選べます。
+            右端の四角で任意の色を選べます。
           </div>
         </RCol>
       </RGroup>

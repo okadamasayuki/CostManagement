@@ -250,9 +250,21 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: 0;
 }
 .swatch.selected { outline: 2px solid var(--excel-green); outline-offset: 1px; }
-.swatch.none {
-  background: repeating-linear-gradient(45deg, #fff, #fff 3px, #e11 3px, #e11 4px);
+/* 「色を消す」は色見本ではなく文字のボタンにする (斜線だと意味が伝わらない) */
+.clear-fill {
+  width: 100%;
+  margin-top: 3px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+  text-align: center;
 }
+.clear-fill:hover { background: #fdeaea; border-color: #e9b3b6; }
+.clear-fill.selected { outline: 2px solid var(--excel-green); outline-offset: 1px; }
 
 /* --------------------------------------------------------------- サイドバー */
 

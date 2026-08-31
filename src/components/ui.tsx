@@ -123,22 +123,24 @@ export function ColorSwatches(props: {
           onClick={() => props.onChange(p.argb)}
         />
       ))}
-      {props.allowNone !== false && (
-        <button
-          type="button"
-          title="塗りなし (塗りつぶしを解除する)"
-          className={`swatch none${props.value === null ? ' selected' : ''}`}
-          onClick={() => props.onChange(null)}
-        />
-      )}
       <input
         type="color"
         className="swatch"
-        title="その他の色"
+        title="その他の色を選ぶ"
         value={argbToCss(props.value ?? 'FFFFFFFF') ?? '#ffffff'}
         onChange={(e) => props.onChange(cssToArgb(e.target.value))}
         style={{ padding: 0, cursor: 'pointer' }}
       />
+      {props.allowNone !== false && (
+        <button
+          type="button"
+          className={`clear-fill${props.value === null ? ' selected' : ''}`}
+          title="選んだセルの塗りつぶしを消して、色なしに戻します"
+          onClick={() => props.onChange(null)}
+        >
+          🚫 色を消す
+        </button>
+      )}
     </div>
   );
 }

@@ -34,6 +34,16 @@
       "
     />
     <meta name="referrer" content="no-referrer" />
+    <!--
+      アイコンを埋め込んでおく。
+      指定が無いとブラウザーが自動的に /favicon.ico を取りに行き、
+      CSP の img-src に引っかかって「遮断しました」と表示されてしまう。
+      データが外に出るわけではないが、紛らわしいので要求自体を無くす。
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23217346'/%3E%3Cpath d='M4 4h3l1.5 2.5L10 4h3l-3 4 3 4h-3L8.5 9.5 7 12H4l3-4z' fill='white'/%3E%3C/svg%3E"
+    />
     <title>Excel 一括ロック / 年度更新ツール</title>
   </head>
   <body>
