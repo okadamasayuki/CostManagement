@@ -66,6 +66,36 @@ export const DEFAULT_PROTECT_OPTIONS: SheetProtectOptions = {
   sort: false,
 };
 
+/**
+ * セルの絞り込み条件。
+ * 「数値が入っているセル」「500 万円を超えるセル」のように、
+ * 中身を見て対象を決めるために使う。
+ */
+export interface CellCondition {
+  /** セルの種類 */
+  kind: 'any' | 'number' | 'text' | 'formula' | 'blank';
+  /** 数値の条件 (kind が number / any のとき) */
+  number?: {
+    op: 'gt' | 'ge' | 'lt' | 'le' | 'eq' | 'ne' | 'between';
+    a: number;
+    /** op が between のときの上限 */
+    b?: number;
+  };
+  /** 文字の条件 (kind が text / formula / any のとき) */
+  text?: {
+    op: 'contains' | 'startsWith' | 'endsWith' | 'equals';
+    value: string;
+    matchCase: boolean;
+  };
+}
+
+export const DEFAULT_CONDITION: CellCondition = { kind: 'number' };
+
+/** 条件に合ったセルに対して行うこと */
+export type ConditionAction =
+  | { kind: 'fill'; colorArgb: string | null }
+  | { kind: 'lock'; locked: boolean };
+
 export type StepBody =
   /** 指定範囲のロックを ON/OFF する */
   | { op: 'setLock'; range: RangeSpec; locked: boolean }
@@ -102,6 +132,16 @@ export type StepBody =
       alsoSetMatched?: boolean;
       /** 'out' のとき、色の付いていないセルも対象に含めるか */
       includeUnfilled: boolean;
+      range: RangeSpec;
+    }
+  /**
+   * 条件に合うセルだけを塗る / ロックする。
+   * 「数値が入っているセルに色を付ける」のような指定ができる。
+   */
+  | {
+      op: 'applyByCondition';
+      condition: CellCondition;
+      action: ConditionAction;
       range: RangeSpec;
     }
   /** ロック状態に応じて一括で塗る */

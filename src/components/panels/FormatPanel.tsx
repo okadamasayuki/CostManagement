@@ -12,6 +12,7 @@ import {
 import { rectToA1 } from '../../excel/cellRef';
 import { argbToCss } from '../../excel/format';
 import { ColorLockDialog } from './ColorLockDialog';
+import { ConditionDialog } from './ConditionDialog';
 import { runOperation, setState, toast, useStore } from '../../state/store';
 
 /**
@@ -24,6 +25,7 @@ export function FormatPanel() {
   const [color, setColor] = useState<string | null>('FFFFF2CC');
   const [onlyWithValue, setOnlyWithValue] = useState(false);
   const [showColorLock, setShowColorLock] = useState(false);
+  const [showCondition, setShowCondition] = useState(false);
 
   const selectionA1 = s.selection ? rectToA1(s.selection) : null;
   const ready = s.books.length > 0;
@@ -137,6 +139,25 @@ export function FormatPanel() {
         </RCol>
       </RGroup>
 
+      <RGroup title="条件で塗る">
+        <BigButton
+          icon="🔢"
+          label={<>条件を指定して<br />塗る / ロック</>}
+          primary
+          disabled={!ready}
+          title="「数値が入っているセル」「500,000 を超えるセル」のように、中身から対象を決めて一括で処理します"
+          onClick={() => setShowCondition(true)}
+        />
+        <RCol>
+          <div style={{ width: 200 }}>
+            <NoteBox>
+              1 つずつ選ばなくても、<b>中身から対象を決めて</b>
+              まとめて塗れます。数百ファイルでも一度に処理できます。
+            </NoteBox>
+          </div>
+        </RCol>
+      </RGroup>
+
       <RGroup title="色からロック">
         <BigButton
           icon="🔎"
@@ -178,6 +199,7 @@ export function FormatPanel() {
       </RGroup>
 
       {showColorLock && <ColorLockDialog onClose={() => setShowColorLock(false)} />}
+      {showCondition && <ConditionDialog onClose={() => setShowCondition(false)} />}
     </>
   );
 }

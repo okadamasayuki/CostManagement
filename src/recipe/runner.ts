@@ -129,6 +129,7 @@ const KNOWN_OPS = new Set([
   'fillRange',
   'fillByLockState',
   'setLockByFill',
+  'applyByCondition',
   'shiftYears',
   'mapYears',
   'replaceText',

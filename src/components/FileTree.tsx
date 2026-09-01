@@ -1,7 +1,14 @@
 import { useMemo, useState } from 'react';
 import type { LoadedWorkbook } from '../excel/types';
 import { isMacroFormat } from '../excel/loader';
-import { closeBook, selectBook, setState, toast, useStore } from '../state/store';
+import {
+  closeBook,
+  selectBook,
+  setSelectedBooks,
+  setState,
+  toast,
+  useStore,
+} from '../state/store';
 import { isUnderFolder } from '../excel/folders';
 
 /** 相対パスからフォルダー階層のツリーを組み立てる */
@@ -60,12 +67,56 @@ export function FileTree() {
     );
   }
 
+  /**
+   * 画面に見えている順のファイル一覧。
+   * Shift クリックの範囲選択は、この並び順で決める。
+   */
+  const visibleOrder: string[] = [];
+  const collectOrder = (node: TreeNode) => {
+    for (const folder of node.folders.values()) {
+      if (!collapsed.has(folder.path)) collectOrder(folder);
+    }
+    for (const b of node.files) visibleOrder.push(b.id);
+  };
+  collectOrder(tree);
+
+  /**
+   * ファイルのクリック。
+   *   そのまま      … 1 件だけ選ぶ
+   *   Shift + クリック … 直前に選んだところからの範囲
+   *   Ctrl/⌘ + クリック … 1 件ずつ足し引き
+   */
+  const clickFile = (id: string, e: React.MouseEvent) => {
+    if (e.shiftKey && s.currentBookId) {
+      const from = visibleOrder.indexOf(s.currentBookId);
+      const to = visibleOrder.indexOf(id);
+      if (from >= 0 && to >= 0) {
+        const [lo, hi] = from <= to ? [from, to] : [to, from];
+        setSelectedBooks(visibleOrder.slice(lo, hi + 1));
+        setState({ scope: { ...s.scope, books: 'selected' } });
+        return;
+      }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      const next = s.selectedBookIds.includes(id)
+        ? s.selectedBookIds.filter((x) => x !== id)
+        : [...s.selectedBookIds, id];
+      setSelectedBooks(next);
+      setState({ scope: { ...s.scope, books: 'selected' } });
+      return;
+    }
+    selectBook(id);
+  };
+
   const toggle = (path: string) => {
     const next = new Set(collapsed);
     if (next.has(path)) next.delete(path);
     else next.add(path);
     setCollapsed(next);
   };
+
+  // 複数選択しているときだけ選択の目印を出す (1 件だけなら現在のブックと同じ)
+  const multi = s.scope.books === 'selected' && s.selectedBookIds.length > 1;
 
   const renderNode = (node: TreeNode, depth: number): React.ReactNode[] => {
     const out: React.ReactNode[] = [];
@@ -115,12 +166,14 @@ export function FileTree() {
       out.push(
         <div
           key={b.id}
-          className={`tree-file${b.id === s.currentBookId ? ' active' : ''}`}
+          className={`tree-file${b.id === s.currentBookId ? ' active' : ''}${
+            multi && s.selectedBookIds.includes(b.id) ? ' picked' : ''
+          }`}
           style={{ paddingLeft: 10 + depth * 12 }}
-          onClick={() => selectBook(b.id)}
+          onClick={(e) => clickFile(b.id, e)}
           title={`${b.relPath}\n${(b.sizeBytes / 1024).toFixed(0)} KB${
             rename ? `\n保存時のファイル名: ${rename}` : ''
-          }`}
+          }\n\nShift + クリックで範囲選択、Ctrl + クリックで 1 件ずつ選択`}
         >
           <span>{b.loadError ? '⚠️' : '📗'}</span>
           <span className="name">{rename ?? b.fileName}</span>
@@ -151,8 +204,32 @@ export function FileTree() {
       <div className="side-header">
         <span>ファイル ({s.books.length})</span>
         <span className="spacer" />
+        {s.books.length > 1 && (
+          <button
+            className="icon-btn"
+            title="すべてのファイルを選択して、まとめて操作の対象にする"
+            onClick={() => {
+              setSelectedBooks(s.books.map((b) => b.id));
+              setState({ scope: { ...s.scope, books: 'selected' } });
+            }}
+          >
+            ☑ 全選択
+          </button>
+        )}
         {dirty > 0 && <span className="badge dirty">未保存 {dirty}</span>}
       </div>
+      {s.scope.books === 'selected' && (
+        <div className="scope-banner" title="Shift / Ctrl クリックで選び直せます">
+          🎯 対象: <b>選択した {s.selectedBookIds.length} ブック</b>
+          <button
+            className="icon-btn"
+            title="選択をやめて、表示中のブックのみに戻す"
+            onClick={() => setState({ scope: { ...s.scope, books: 'current' } })}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {s.scope.books === 'folder' && (
         <div className="scope-banner" title="リボンの「適用先」で変更できます">
           🎯 対象:{' '}

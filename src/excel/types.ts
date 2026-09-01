@@ -94,7 +94,7 @@ export interface SheetView {
 
 /** 操作の適用範囲 */
 export interface OpScope {
-  books: 'current' | 'all' | 'glob' | 'folder';
+  books: 'current' | 'all' | 'glob' | 'folder' | 'selected';
   /** books==='glob' のときのファイル名パターン (例: `*原価*.xlsx`) */
   bookGlob?: string;
   /**

@@ -6,6 +6,7 @@ import { colToLetter, parseA1Range, rectToA1 } from './cellRef';
 import { asRecord, asStyle, forEachExistingCell, getSheetProtection } from './exceljsCompat';
 import { resolveColor, type FillRef } from './color';
 import { isUnderFolder } from './folders';
+import { matchesCondition } from './condition';
 import {
   mapNumericYear,
   pairMapper,
@@ -24,6 +25,8 @@ export interface OpContext {
   currentSheetName: string | null;
   /** グリッド上の選択範囲 */
   selection: RangeRect | null;
+  /** 一覧で選択されているブック (scope.books === 'selected' で使う) */
+  selectedBookIds?: string[];
 }
 
 export interface ApplyOptions {
@@ -72,6 +75,11 @@ export function resolveTargets(ctx: OpContext, scope: OpScope): SheetTarget[] {
     case 'folder':
       books = ctx.books.filter((b) => isUnderFolder(b.relPath, scope.bookFolder ?? ''));
       break;
+    case 'selected': {
+      const ids = new Set(ctx.selectedBookIds ?? []);
+      books = ctx.books.filter((b) => ids.has(b.id));
+      break;
+    }
     default:
       books = [...ctx.books];
   }
@@ -435,6 +443,43 @@ function opSetLockByFill(
   return detail(t, parts.join(' / ') + (ok ? '' : SPARSE_NOTE), count + inverted);
 }
 
+/**
+ * 条件に合うセルだけを塗る / ロックする。
+ * 「数値が入っているセルに色を付ける」のような使い方を想定している。
+ */
+function opApplyByCondition(
+  t: SheetTarget,
+  body: Extract<StepBody, { op: 'applyByCondition' }>,
+  dryRun: boolean,
+): OpDetail | null {
+  const rect = resolveRange(t.ws, body.range);
+  if (!rect) return null;
+
+  let count = 0;
+  const ok = forEachCell(t.ws, rect, (cell) => {
+    if (!matchesCondition(cell, body.condition)) return;
+    if (body.action.kind === 'fill') {
+      const target = body.action.colorArgb;
+      if (target === null ? !cell.fill : getFillArgb(cell) === target) return;
+      count++;
+      if (!dryRun) setFill(cell, target);
+    } else {
+      if (getLocked(cell) === body.action.locked) return;
+      count++;
+      if (!dryRun) setLocked(cell, body.action.locked);
+    }
+  });
+
+  if (count === 0) return null;
+  const what =
+    body.action.kind === 'fill'
+      ? `塗りを${body.action.colorArgb === null ? '解除' : '変更'}`
+      : body.action.locked
+        ? 'ロック'
+        : 'ロック解除';
+  return detail(t, `条件に合う ${count} セルを${what}` + (ok ? '' : SPARSE_NOTE), count);
+}
+
 function opFillByLockState(
   t: SheetTarget,
   body: Extract<StepBody, { op: 'fillByLockState' }>,
@@ -727,6 +772,9 @@ export async function applyStep(
         break;
       case 'setLockByFill':
         d = opSetLockByFill(t, body, dryRun);
+        break;
+      case 'applyByCondition':
+        d = opApplyByCondition(t, body, dryRun);
         break;
       case 'shiftYears':
       case 'mapYears':

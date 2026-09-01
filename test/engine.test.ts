@@ -519,6 +519,136 @@ async function main(): Promise<void> {
   });
 
   // ------------------------------------------------------------------------
+  section('条件でセルを選ぶ');
+
+  const condBook = () =>
+    makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      ws.getCell('A1').value = '費目';       // 文字
+      ws.getCell('B1').value = 100;          // 数値 (小)
+      ws.getCell('C1').value = 5_000_000;    // 数値 (大)
+      ws.getCell('A2').value = '合計';       // 文字
+      ws.getCell('B2').value = { formula: 'SUM(B1:B1)', result: 100 }; // 数式
+      // C2 は空
+    });
+
+  await test('数値が入っているセルだけ塗れる', async () => {
+    const book = condBook();
+    await applyStep(
+      step({
+        op: 'applyByCondition',
+        condition: { kind: 'number' },
+        action: { kind: 'fill', colorArgb: 'FFFFFF00' },
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const ws = (await roundTrip(book)).getWorksheet('S')!;
+    const filled = (a: string) => Boolean((ws.getCell(a).fill as { fgColor?: unknown })?.fgColor);
+    assert.equal(filled('B1'), true, '数値は塗られるはず');
+    assert.equal(filled('C1'), true, '数値は塗られるはず');
+    assert.equal(filled('B2'), true, '数式でも結果が数値なら対象');
+    assert.equal(filled('A1'), false, '文字は塗られないはず');
+    assert.equal(filled('C2'), false, '空欄は塗られないはず');
+  });
+
+  await test('値の大きさで絞り込める', async () => {
+    const book = condBook();
+    await applyStep(
+      step({
+        op: 'applyByCondition',
+        condition: { kind: 'number', number: { op: 'gt', a: 1_000_000 } },
+        action: { kind: 'fill', colorArgb: 'FFFF0000' },
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const ws = (await roundTrip(book)).getWorksheet('S')!;
+    const filled = (a: string) => Boolean((ws.getCell(a).fill as { fgColor?: unknown })?.fgColor);
+    assert.equal(filled('C1'), true, '500 万は対象');
+    assert.equal(filled('B1'), false, '100 は対象外');
+  });
+
+  await test('文字を含むセルを選べる', async () => {
+    const book = condBook();
+    await applyStep(
+      step({
+        op: 'applyByCondition',
+        condition: { kind: 'text', text: { op: 'contains', value: '合計', matchCase: false } },
+        action: { kind: 'lock', locked: false },
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const ws = (await roundTrip(book)).getWorksheet('S')!;
+    assert.equal(isCellLocked(ws.getCell('A2')), false, '「合計」は解除されるはず');
+    assert.equal(isCellLocked(ws.getCell('A1')), true, '「費目」は対象外');
+  });
+
+  await test('数式のセルだけを選べる', async () => {
+    const book = condBook();
+    const out = await applyStep(
+      step({
+        op: 'applyByCondition',
+        condition: { kind: 'formula' },
+        action: { kind: 'lock', locked: false },
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    assert.equal(out.changedCells, 1, `対象セル数: ${out.changedCells}`);
+    const ws = (await roundTrip(book)).getWorksheet('S')!;
+    assert.equal(isCellLocked(ws.getCell('B2')), false, '数式セルが対象');
+    assert.equal(isCellLocked(ws.getCell('B1')), true, '数値セルは対象外');
+  });
+
+  await test('空のセルを選べる', async () => {
+    const book = condBook();
+    const out = await applyStep(
+      step({
+        op: 'applyByCondition',
+        condition: { kind: 'blank' },
+        action: { kind: 'fill', colorArgb: 'FFD9D9D9' },
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    assert.ok(out.changedCells >= 1, '空セルが対象になるはず');
+    const ws = (await roundTrip(book)).getWorksheet('S')!;
+    assert.ok((ws.getCell('C2').fill as { fgColor?: unknown })?.fgColor, 'C2 が塗られるはず');
+  });
+
+  // ------------------------------------------------------------------------
+  section('一覧で選んだブックだけを対象にする');
+
+  await test('選んだブックだけが処理される', async () => {
+    const mk = (id: string, name: string) =>
+      makeBook(id, name, (wb) => {
+        wb.addWorksheet('S').getCell('A1').value = '2024年度';
+      });
+    const books = [mk('b1', 'a.xlsx'), mk('b2', 'b.xlsx'), mk('b3', 'c.xlsx')];
+    const out = await applyStep(
+      step(
+        {
+          op: 'shiftYears',
+          delta: 1,
+          minYear: 2020,
+          maxYear: 2030,
+          wholeNumberOnly: true,
+          targets: DEFAULT_YEAR_TARGETS,
+          range: { kind: 'used' },
+        },
+        { books: 'selected', sheets: 'all' },
+      ),
+      { ...ctx(books), selectedBookIds: ['b1', 'b3'] },
+    );
+    assert.equal(out.targetSheets, 2, '選んだ 2 冊が対象');
+    assert.equal(books[0].wb.getWorksheet('S')!.getCell('A1').value, '2025年度');
+    assert.equal(books[1].wb.getWorksheet('S')!.getCell('A1').value, '2024年度', '未選択は変わらない');
+    assert.equal(books[2].wb.getWorksheet('S')!.getCell('A1').value, '2025年度');
+  });
+
+  // ------------------------------------------------------------------------
   section('年度更新 (ブック全体)');
 
   await test('値・数式・シート名・ファイル名をまとめて更新できる', async () => {

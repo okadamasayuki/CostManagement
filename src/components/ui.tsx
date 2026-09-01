@@ -166,10 +166,17 @@ export function ScopeSelector(props: { scope: OpScope; onChange(s: OpScope): voi
         >
           <option value="current">選択中のブックのみ</option>
           <option value="all">読み込んだ全ブック</option>
+          <option value="selected">一覧で選んだブック ({store.selectedBookIds.length})</option>
           <option value="folder">フォルダーを指定…</option>
           <option value="glob">ファイル名で指定…</option>
         </select>
       </Field>
+      {scope.books === 'selected' && (
+        <div style={{ fontSize: 10.5, color: 'var(--text-dim)', paddingLeft: 2, width: 178 }}>
+          左の一覧を <b>Shift</b> / <b>Ctrl</b> クリックで選べます (現在{' '}
+          <b>{store.selectedBookIds.length}</b> ブック)
+        </div>
+      )}
       {scope.books === 'folder' && (
         <>
           <Field label="">

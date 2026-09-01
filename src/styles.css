@@ -332,6 +332,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .tree-file:hover { background: #efeeed; }
 .tree-file.active { background: var(--header-active); border-left-color: var(--excel-green); font-weight: 600; }
+/* 複数選択したファイルの目印 */
+.tree-file.picked { background: #e5f0ea; border-left-color: var(--excel-green-light); }
+.tree-file.picked.active { background: var(--header-active); }
 .tree-file .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-file .badge { font-size: 9px; padding: 0 4px; border-radius: 7px; flex-shrink: 0; }
 .badge.dirty { background: var(--warn-bg); color: var(--warn); border: 1px solid #e8c98a; }

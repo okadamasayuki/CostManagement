@@ -54,6 +54,14 @@ async function closeAllBooks(page) {
   throw new Error('ブックを閉じきれない');
 }
 
+/** 文字を手がかりにセルの背景色を読む */
+async function bg(page, text) {
+  return page
+    .locator('.cell', { hasText: text })
+    .first()
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+}
+
 async function waitUntil(fn, msg, timeout = 20000) {
   const deadline = Date.now() + timeout;
   let last;
@@ -355,6 +363,52 @@ await check('適用先はステータスバーにも常に出る', async () => {
   assert(/このブック/.test(status), `解除後の適用先が想定外: ${status}`);
 });
 
+console.log('\n\x1b[1m複数ファイルの選択\x1b[0m');
+
+await check('Shift クリックで範囲選択できる', async () => {
+  const files = page.locator('.tree-file');
+  await files.first().click();
+  await files.nth(2).click({ modifiers: ['Shift'] });
+  await waitUntil(
+    async () => (await page.locator('.scope-banner').count()) > 0,
+    '選択の表示が出ない',
+  );
+  const banner = await page.textContent('.scope-banner');
+  assert(/選択した 3 ブック/.test(banner), `表示: ${banner}`);
+  assert((await page.locator('.tree-file.picked').count()) === 3, '目印が 3 件でない');
+});
+
+await check('選んだブックだけが処理の対象になる', async () => {
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  assert(
+    (await page.inputValue('[data-testid="scope-books"]')) === 'selected',
+    '適用先が「選んだブック」になっていない',
+  );
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
+  await page.click('.rbtn-lg:has-text("変更内容を")');
+  await waitUntil(
+    async () => (await page.locator('[data-testid="preview-details"] li').count()) > 0,
+    '試算が出ない',
+  );
+  const where = await page.locator('[data-testid="preview-details"] .where').allTextContents();
+  const books = new Set(where.map((w) => w.split(' / ')[0]));
+  assert(books.size === 3, `対象ブック数が ${books.size}: ${[...books].join(', ')}`);
+});
+
+await check('Ctrl クリックで 1 件ずつ外せる', async () => {
+  await page.locator('.tree-file').nth(1).click({ modifiers: ['Control'] });
+  await waitUntil(
+    async () => (await page.locator('.tree-file.picked').count()) === 2,
+    '選択を外せない',
+  );
+  // 後片付け
+  await page.locator('.tree-file').first().click();
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  await page.selectOption('[data-testid="scope-books"]', 'current');
+  await page.selectOption('[data-testid="scope-sheets"]', 'current');
+  await page.click('.rp-title:has-text("試算結果") .icon-btn');
+});
+
 console.log('\n\x1b[1m色からロックを設定\x1b[0m');
 
 await check('使われている色の一覧が出る', async () => {
@@ -532,6 +586,52 @@ await check('ロック解除セルを一括で塗れる', async () => {
 });
 
 await page.screenshot({ path: join(SHOTS, '03-colored.png') });
+
+console.log('\n\x1b[1m条件を指定して塗る\x1b[0m');
+
+await check('数値が入っているセルだけを塗れる', async () => {
+  await page.click('.ribbon-tab:has-text("書式")');
+  await page.click('.rbtn-lg:has-text("条件を指定して")');
+  await page.waitForSelector('.modal:has-text("条件を指定して")');
+  await page.selectOption('[data-testid="cond-kind"]', 'number');
+  await page.click('.modal-foot .rbtn:has-text("試算")');
+  await waitUntil(
+    async () => (await page.locator('.note-box:has-text("試算")').count()) > 0,
+    '試算が出ない',
+  );
+  await page.click('.modal-foot .rbtn.accent');
+  await waitUntil(async () => (await page.locator('.modal').count()) === 0, '閉じない');
+
+  // 金額のセルが塗られ、費目名は塗られていないこと
+  // 既定の色 FFFFF2CC = rgb(255, 242, 204)。塗っていないセルは白。
+  await waitUntil(async () => (await bg(page, '1,000,000')) === 'rgb(255, 242, 204)', '数値が塗られない');
+  assert((await bg(page, '材料費')) === 'rgb(255, 255, 255)', '文字まで塗られている');
+});
+
+await check('金額の大きさで絞り込める', async () => {
+  await page.click('.rbtn-lg:has-text("条件を指定して")');
+  await page.waitForSelector('.modal');
+  await page.selectOption('[data-testid="cond-kind"]', 'number');
+  await page.locator('.modal .check:has-text("値の大きさ") input').check();
+  await page.fill('[data-testid="cond-num-a"]', '4000000');
+  await page.selectOption('[data-testid="cond-num-op"]', 'gt');
+  await page.click('.modal .swatches .swatch[title="赤"]');
+  await page.click('.modal-foot .rbtn.accent');
+  await waitUntil(async () => (await page.locator('.modal').count()) === 0, '閉じない');
+
+  await waitUntil(async () => (await bg(page, '5,000,000')) === 'rgb(255, 0, 0)', '400万超が赤くない');
+  assert((await bg(page, '1,000,000')) !== 'rgb(255, 0, 0)', '400万以下まで赤い');
+});
+
+await check('条件が手順書に記録される', async () => {
+  await page.click('.ribbon-tab:has-text("手順書")');
+  await waitUntil(
+    async () => (await page.locator('.step-item:has-text("数値が入っているセル")').count()) > 0,
+    '条件の手順が記録されていない',
+  );
+  const body = await page.locator('.step-item:has-text("数値が入っているセル")').last().textContent();
+  assert(/4,000,000/.test(body), `条件が残っていない: ${body}`);
+});
 
 console.log('\n\x1b[1m年度更新\x1b[0m');
 

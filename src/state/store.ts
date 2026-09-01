@@ -45,6 +45,8 @@ export interface AppState {
   books: LoadedWorkbook[];
   skipped: SkippedFile[];
   currentBookId: string | null;
+  /** 一覧で選択しているブック (Shift / Ctrl クリックで複数選べる) */
+  selectedBookIds: string[];
   currentSheetName: string | null;
   selection: RangeRect | null;
   anchor: { row: number; col: number } | null;
@@ -81,6 +83,7 @@ let state: AppState = {
   books: [],
   skipped: [],
   currentBookId: null,
+  selectedBookIds: [],
   currentSheetName: null,
   selection: null,
   anchor: null,
@@ -164,6 +167,7 @@ export function opContext(): OpContext {
     currentBookId: state.currentBookId,
     currentSheetName: state.currentSheetName,
     selection: state.selection,
+    selectedBookIds: state.selectedBookIds,
   };
 }
 
@@ -216,6 +220,11 @@ export function addBooks(books: LoadedWorkbook[], skipped: SkippedFile[]): void 
   });
 }
 
+/** 一覧での複数選択を差し替える */
+export function setSelectedBooks(ids: string[]): void {
+  setState({ selectedBookIds: ids });
+}
+
 export function selectBook(id: string): void {
   const book = state.books.find((b) => b.id === id);
   if (!book) return;
@@ -225,7 +234,13 @@ export function selectBook(id: string): void {
       if (!name) name = ws.name;
     });
   }
-  setState({ currentBookId: id, currentSheetName: name, selection: null, anchor: null });
+  setState({
+    currentBookId: id,
+    selectedBookIds: [id],
+    currentSheetName: name,
+    selection: null,
+    anchor: null,
+  });
 }
 
 export function selectSheet(name: string): void {
@@ -237,6 +252,7 @@ export function closeAll(): void {
     books: [],
     skipped: [],
     currentBookId: null,
+    selectedBookIds: [],
     currentSheetName: null,
     selection: null,
     anchor: null,
@@ -259,6 +275,7 @@ export function closeBook(id: string): void {
   delete renames[id];
   setState({
     books: rest,
+    selectedBookIds: state.selectedBookIds.filter((x) => x !== id),
     currentBookId: nextId,
     currentSheetName: nextId === state.currentBookId ? state.currentSheetName : name,
     renames,
@@ -322,6 +339,26 @@ export async function runOperation(
   };
   const outcome = await applyStep(step, opContext(), { dryRun: false });
 
+  /**
+   * 「一覧で選択したブック」は画面上の一時的な状態なので、
+   * 手順書にはファイル名の一覧として残す。
+   * こうしておけば、後日 読み込み直しても同じ対象に当てられる。
+   */
+  const recorded: RecipeStep =
+    scope.books === 'selected'
+      ? {
+          ...step,
+          scope: {
+            ...scope,
+            books: 'glob',
+            bookGlob: state.books
+              .filter((b) => state.selectedBookIds.includes(b.id))
+              .map((b) => b.fileName)
+              .join(', '),
+          },
+        }
+      : step;
+
   const renames = { ...state.renames };
   for (const r of outcome.fileRenames) renames[r.bookId] = r.to;
 
@@ -338,7 +375,7 @@ export async function runOperation(
     history: [entry, ...state.history].slice(0, 200),
     docVersion: state.docVersion + 1,
     renames,
-    recipe: record ? { ...state.recipe, steps: [...state.recipe.steps, step] } : state.recipe,
+    recipe: record ? { ...state.recipe, steps: [...state.recipe.steps, recorded] } : state.recipe,
   });
   return outcome;
 }

@@ -1,5 +1,5 @@
 import type { OpScope } from '../excel/types';
-import type { RangeSpec, RecipeStep, StepBody } from './types';
+import type { CellCondition, RangeSpec, RecipeStep, StepBody } from './types';
 import { argbToCss } from '../excel/format';
 
 /** 操作内容を日本語の文章にする。手順書とプレビューの両方で使う。 */
@@ -25,7 +25,9 @@ export function describeScope(scope: OpScope): string {
           ? scope.bookFolder
             ? `フォルダー「${scope.bookFolder}」配下のすべてのブック`
             : '読み込んだすべてのブック'
-          : `ファイル名が「${scope.bookGlob || '*'}」に一致するブック`;
+          : scope.books === 'selected'
+            ? '一覧で選択したブック'
+            : `ファイル名が「${scope.bookGlob || '*'}」に一致するブック`;
   const sheet =
     scope.sheets === 'current'
       ? '選択中のシート'
@@ -46,7 +48,9 @@ export function describeScopeShort(scope: OpScope): string {
           ? scope.bookFolder
             ? `${scope.bookFolder}/`
             : '全ブック'
-          : (scope.bookGlob || '*');
+          : scope.books === 'selected'
+            ? '選択したブック'
+            : (scope.bookGlob || '*');
   const sheet =
     scope.sheets === 'current'
       ? 'このシート'
@@ -54,6 +58,46 @@ export function describeScopeShort(scope: OpScope): string {
         ? '全シート'
         : (scope.sheetGlob || '*');
   return `${book} ・ ${sheet}`;
+}
+
+const NUMBER_OPS: Record<string, string> = {
+  gt: 'より大きい',
+  ge: '以上',
+  lt: 'より小さい',
+  le: '以下',
+  eq: 'と等しい',
+  ne: '以外',
+  between: '〜の範囲',
+};
+const TEXT_OPS: Record<string, string> = {
+  contains: 'を含む',
+  startsWith: 'で始まる',
+  endsWith: 'で終わる',
+  equals: 'と一致する',
+};
+const KINDS: Record<string, string> = {
+  any: 'すべてのセル',
+  number: '数値が入っているセル',
+  text: '文字が入っているセル',
+  formula: '数式が入っているセル',
+  blank: '空のセル',
+};
+
+export function describeCondition(c: CellCondition): string {
+  const parts = [KINDS[c.kind] ?? c.kind];
+  if (c.number) {
+    parts.push(
+      c.number.op === 'between'
+        ? `値が ${c.number.a.toLocaleString()}〜${(c.number.b ?? c.number.a).toLocaleString()}`
+        : `値が ${c.number.a.toLocaleString()} ${NUMBER_OPS[c.number.op]}`,
+    );
+  }
+  if (c.text?.value) {
+    parts.push(
+      `「${c.text.value}」${TEXT_OPS[c.text.op]}${c.text.matchCase ? ' (大文字小文字を区別)' : ''}`,
+    );
+  }
+  return parts.join(' かつ ');
 }
 
 export function describeBody(body: StepBody): string {
@@ -94,6 +138,18 @@ export function describeBody(body: StepBody): string {
         }`;
       }
       return main;
+    }
+    case 'applyByCondition': {
+      const what = describeCondition(body.condition);
+      const act =
+        body.action.kind === 'fill'
+          ? body.action.colorArgb === null
+            ? '塗りつぶしを解除する'
+            : `${argbToCss(body.action.colorArgb)} で塗りつぶす`
+          : body.action.locked
+            ? 'ロックする'
+            : 'ロック解除する (入力可能にする)';
+      return `${describeRange(body.range)}のうち、${what}を${act}`;
     }
     case 'fillByLockState':
       return body.colorArgb === null
@@ -171,6 +227,10 @@ export function autoLabel(body: StepBody): string {
     case 'setLockByFill':
       return `色で${body.locked ? 'ロック' : 'ロック解除'} (${
         body.match === 'in' ? '指定色' : '指定色以外'
+      })`;
+    case 'applyByCondition':
+      return `条件で${body.action.kind === 'fill' ? '塗る' : 'ロック設定'} (${
+        KINDS[body.condition.kind] ?? body.condition.kind
       })`;
     case 'fillByLockState':
       return `${body.target === 'locked' ? 'ロック済み' : 'ロック解除'}セルを色分け`;
