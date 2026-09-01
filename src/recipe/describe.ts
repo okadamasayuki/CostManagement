@@ -151,6 +151,18 @@ export function describeBody(body: StepBody): string {
             : 'ロック解除する (入力可能にする)';
       return `${describeRange(body.range)}のうち、${what}を${act}`;
     }
+    case 'detectInputCells': {
+      const acts: string[] = [];
+      if (body.fillChanged) acts.push(`${argbToCss(body.fillChanged)} で塗る`);
+      if (body.unlockChanged) acts.push('入力できるようにする');
+      const tail = body.lockUnchanged ? '。値が変わらないセル (様式) はロックする' : '';
+      return (
+        '年違いの同じ様式のファイルを見比べ、値が変わっているセル (毎年記入されている欄) を' +
+        `${acts.join('・') || '判定するだけ'}${tail}` +
+        `${body.ignoreYearOnly ? '。年度の数字だけの違いは様式とみなす' : ''}` +
+        `${body.compareFormulaText ? '。数式は式そのもので比べる' : ''}`
+      );
+    }
     case 'fillByLockState':
       return body.colorArgb === null
         ? `${body.target === 'locked' ? 'ロックされている' : 'ロックされていない'}セルの塗りつぶしを解除する`
@@ -228,6 +240,8 @@ export function autoLabel(body: StepBody): string {
       return `色で${body.locked ? 'ロック' : 'ロック解除'} (${
         body.match === 'in' ? '指定色' : '指定色以外'
       })`;
+    case 'detectInputCells':
+      return '2 年分を見比べて記入欄を判定';
     case 'applyByCondition':
       return `条件で${body.action.kind === 'fill' ? '塗る' : 'ロック設定'} (${
         KINDS[body.condition.kind] ?? body.condition.kind

@@ -130,6 +130,7 @@ const KNOWN_OPS = new Set([
   'fillByLockState',
   'setLockByFill',
   'applyByCondition',
+  'detectInputCells',
   'shiftYears',
   'mapYears',
   'replaceText',

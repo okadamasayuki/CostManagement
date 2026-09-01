@@ -13,6 +13,7 @@ import { rectToA1 } from '../../excel/cellRef';
 import { argbToCss } from '../../excel/format';
 import { ColorLockDialog } from './ColorLockDialog';
 import { ConditionDialog } from './ConditionDialog';
+import { DetectInputDialog } from './DetectInputDialog';
 import { runOperation, setState, toast, useStore } from '../../state/store';
 
 /**
@@ -26,6 +27,7 @@ export function FormatPanel() {
   const [onlyWithValue, setOnlyWithValue] = useState(false);
   const [showColorLock, setShowColorLock] = useState(false);
   const [showCondition, setShowCondition] = useState(false);
+  const [showDetect, setShowDetect] = useState(false);
 
   const selectionA1 = s.selection ? rectToA1(s.selection) : null;
   const ready = s.books.length > 0;
@@ -158,6 +160,26 @@ export function FormatPanel() {
         </RCol>
       </RGroup>
 
+      <RGroup title="2 年分から判定">
+        <BigButton
+          icon="🔍"
+          label={<>2 年分を見比べて<br />記入欄を判定</>}
+          primary
+          disabled={!ready}
+          title="同じ様式のファイルを年違いで見比べ、毎年書き換わっているセルを記入欄として色分け / ロック解除します"
+          onClick={() => setShowDetect(true)}
+        />
+        <RCol>
+          <div style={{ width: 216 }}>
+            <NoteBox>
+              2 年分を読み込んでおくと、<b>毎年書き換わっているセル</b>を
+              主管部の記入欄とみなして自動で判定します。
+              様式 (毎年同じ値) はロックできます。
+            </NoteBox>
+          </div>
+        </RCol>
+      </RGroup>
+
       <RGroup title="色からロック">
         <BigButton
           icon="🔎"
@@ -200,6 +222,7 @@ export function FormatPanel() {
 
       {showColorLock && <ColorLockDialog onClose={() => setShowColorLock(false)} />}
       {showCondition && <ConditionDialog onClose={() => setShowCondition(false)} />}
+      {showDetect && <DetectInputDialog onClose={() => setShowDetect(false)} />}
     </>
   );
 }

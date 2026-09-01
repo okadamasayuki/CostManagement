@@ -20,6 +20,8 @@ const DIST = join(root, 'dist', 'index.html');
 const SAMPLE = join(root, '.test-build', 'sample');
 const SHOTS = join(root, '.test-build', 'shots');
 const WIDE_FILE = join(root, '.test-build', 'wide.xlsx');
+/** 2 年分の比較用。年フォルダーの下に同じ様式が 1 つずつ入っている。 */
+const YEARS = join(root, '.test-build', 'years');
 
 let passed = 0;
 const failures = [];
@@ -52,6 +54,14 @@ async function closeAllBooks(page) {
     await new Promise((r) => setTimeout(r, 60));
   }
   throw new Error('ブックを閉じきれない');
+}
+
+/** 文字を手がかりにセルの class を読む (ロック表示の確認用) */
+async function cellClass(page, text) {
+  return page
+    .locator('.cell', { hasText: text })
+    .first()
+    .evaluate((el) => el.className);
 }
 
 /** 文字を手がかりにセルの背景色を読む */
@@ -118,7 +128,12 @@ page.on('pageerror', (e) => consoleErrors.push(`pageerror: ${e.message}`));
 
 // 必要なサンプルが無いまま進むと Playwright が待ち続けて時間を浪費するため、
 // 最初に確かめて、無ければすぐ落とす
-for (const required of [DIST, WIDE_FILE, join(SAMPLE, 'cost_2024.xlsx')]) {
+for (const required of [
+  DIST,
+  WIDE_FILE,
+  join(SAMPLE, 'cost_2024.xlsx'),
+  join(YEARS, '2025', 'plan_2025.xlsx'),
+]) {
   if (!existsSync(required)) {
     console.error(`必要なファイルがありません: ${required}\n  npm run test:ui から実行してください。`);
     process.exit(1);
@@ -786,6 +801,94 @@ await check('ZIP で保存でき、中身が更新後の Excel になってい�
   }
   assert(operated === 1, `シート保護が保存されたブックが ${operated} 冊`);
 });
+
+console.log('\n\x1b[1m2 年分を見比べて記入欄を判定\x1b[0m');
+
+await check('2 年分のフォルダーを読み込める', async () => {
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await closeAllBooks(page);
+  // 判定結果 (様式をロック) が分かるよう、全解除の状態から始める
+  await page.selectOption('[data-testid="initial-lock"]', 'unlock');
+  await page.setInputFiles('input[webkitdirectory]', YEARS);
+  await waitUntil(async () => (await page.locator('.tree-file').count()) === 2, '2 年分が読み込めない');
+
+  // 2 冊を見比べる操作なので、「選択中のブックのみ」のままでは組が作れない。
+  // わざと 1 冊だけの指定に戻し、開いたときに広がることを次で確かめる。
+  await page.click('.ribbon-tab:has-text("書式")');
+  await page.selectOption('.ribbon-panel [data-testid="scope-books"]', 'current');
+  await page.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'current');
+});
+
+await check('試算で「毎年書き換わる欄」が数えられる', async () => {
+  await page.click('.ribbon-tab:has-text("書式")');
+  await page.click('.rbtn-lg:has-text("2 年分を見比べて")');
+  await page.waitForSelector('.modal:has-text("2 年分を見比べて")');
+  // 開いた時点で、読み込んだ全ブック・全シートが対象になっていること
+  assert(
+    (await page.inputValue('.modal [data-testid="scope-books"]')) === 'all',
+    '適用先が全ブックに広がらない',
+  );
+  assert(
+    (await page.inputValue('.modal [data-testid="scope-sheets"]')) === 'all',
+    '適用先が全シートに広がらない',
+  );
+  await page.click('.modal-foot .rbtn:has-text("判定してみる")');
+  await page.waitForSelector('[data-testid="detect-preview"]', { timeout: 20000 });
+  const text = await page.textContent('[data-testid="detect-preview"]');
+  assert(/1 組/.test(text), `組数が合わない: ${text}`);
+  // 予算額の 5 セルだけが毎年書き換わっている
+  assert(/記入欄 5 セル/.test(text), `判定結果: ${text}`);
+});
+
+await check('判定した根拠 (変化した値) が例として出る', async () => {
+  const samples = await page.textContent('[data-testid="detect-samples"]');
+  assert(/B4/.test(samples), `例に B4 が出ない: ${samples}`);
+  assert(/3,?400,?000/.test(samples), `前年の値が出ない: ${samples}`);
+  assert(/3,?500,?000/.test(samples), `今年の値が出ない: ${samples}`);
+  // 年の数字だけ違う表題や、数式の合計欄は記入欄にしない
+  assert(!/予算入力表/.test(samples), `表題を記入欄と判定している: ${samples}`);
+  assert(!/A9|B9/.test(samples), `合計欄を記入欄と判定している: ${samples}`);
+});
+
+await check('記入欄が塗られ、様式はロックされる', async () => {
+  await page.click('.modal-foot .rbtn.accent');
+  await waitUntil(async () => (await page.locator('.modal').count()) === 0, '閉じない');
+
+  // 判定は新しい方 (2025) のファイルに反映される
+  await page.locator('.tree-file:has-text("2025")').click();
+  await waitUntil(
+    async () => (await page.textContent('.grid-canvas')).includes('2025年度'),
+    '2025 のブックが開けない',
+  );
+
+  assert((await bg(page, '3,500,000')) === 'rgb(255, 242, 204)', '記入欄が塗られていない');
+  assert((await bg(page, '材料費')) === 'rgb(255, 255, 255)', '様式まで塗られている');
+  assert(/ov-locked/.test(await cellClass(page, '材料費')), '様式がロックされていない');
+  assert(!/ov-locked/.test(await cellClass(page, '3,500,000')), '記入欄がロックされている');
+});
+
+await check('古い方のファイルは変更されない', async () => {
+  await page.locator('.tree-file:has-text("2024")').click();
+  await waitUntil(
+    async () => (await page.textContent('.grid-canvas')).includes('2024年度'),
+    '2024 のブックが開けない',
+  );
+  assert((await bg(page, '3,400,000')) === 'rgb(255, 255, 255)', '前年のファイルまで塗られている');
+});
+
+await check('判定が手順書に記録される', async () => {
+  await page.click('.ribbon-tab:has-text("手順書")');
+  // 手順名は入力欄なので、本文 (説明) の方で探す
+  await waitUntil(
+    async () => (await page.locator('.step-item:has-text("年違いの同じ様式")').count()) > 0,
+    '判定の手順が記録されていない',
+  );
+  const body = await page.locator('.step-item:has-text("年違いの同じ様式")').last().textContent();
+  assert(/毎年記入されている欄/.test(body), `判定の内容が残っていない: ${body}`);
+  assert(/様式.*ロック/.test(body), `様式のロックが残っていない: ${body}`);
+});
+
+await page.screenshot({ path: join(SHOTS, '05b-detect.png') });
 
 console.log('\n\x1b[1mオフライン利用 (ツール本体の保存)\x1b[0m');
 

@@ -7,6 +7,7 @@ import { asRecord, asStyle, forEachExistingCell, getSheetProtection } from './ex
 import { resolveColor, type FillRef } from './color';
 import { isUnderFolder } from './folders';
 import { matchesCondition } from './condition';
+import { detectInputCells, type DetectResult } from './detectInput';
 import {
   mapNumericYear,
   pairMapper,
@@ -727,6 +728,12 @@ export interface FileRename {
   to: string;
 }
 
+/**
+ * 2 年比較の判定結果のうち、画面に出す分だけ。
+ * セルの一覧 (hits) は数十万件になり得るので履歴には残さない。
+ */
+export type DetectReport = Omit<DetectResult, 'hits'>;
+
 export interface StepOutcome extends OpResult {
   fileRenames: FileRename[];
   /**
@@ -735,6 +742,82 @@ export interface StepOutcome extends OpResult {
    * 手順書のフォルダー指定が今のファイル構成に合っていない可能性がある。
    */
   targetSheets: number;
+  /** 2 年比較を行ったときの判定内容 */
+  detect?: DetectReport;
+}
+
+/**
+ * 2 年分の比較で記入欄を判定し、色付け / ロック設定する。
+ *
+ * 他の操作と違い、シート 1 枚ずつではなく「年違いのブックの組」を
+ * 見る必要があるため、専用の経路で処理する。
+ */
+function opDetectInputCells(
+  ctx: OpContext,
+  scope: OpScope,
+  body: Extract<StepBody, { op: 'detectInputCells' }>,
+  dryRun: boolean,
+): { details: OpDetail[]; detect: DetectResult } {
+  // 対象のブックを絞り込む (シートの指定は比較では使わない)
+  const books = [
+    ...new Set(resolveTargets(ctx, { ...scope, sheets: 'all' }).map((t) => t.book)),
+  ];
+  const detect = detectInputCells(books, {
+    ignoreYearOnly: body.ignoreYearOnly,
+    compareFormulaText: body.compareFormulaText,
+  });
+
+  const details: OpDetail[] = [];
+  for (const [key, hit] of detect.hits) {
+    const [bookId, sheetName] = key.split('::');
+    const book = books.find((b) => b.id === bookId);
+    if (!book) continue;
+    const ws = book.wb.getWorksheet(sheetName);
+    if (!ws) continue;
+
+    let filled = 0;
+    let unlocked = 0;
+    let locked = 0;
+
+    const at = (addr: string) => {
+      const rect = parseA1Range(addr);
+      return rect ? ws.getRow(rect.top).getCell(rect.left) : null;
+    };
+
+    for (const addr of hit.changed) {
+      const cell = at(addr);
+      if (!cell) continue;
+      if (body.fillChanged !== null && getFillArgb(cell) !== body.fillChanged) {
+        filled++;
+        if (!dryRun) setFill(cell, body.fillChanged);
+      }
+      if (body.unlockChanged && getLocked(cell)) {
+        unlocked++;
+        if (!dryRun) setLocked(cell, false);
+      }
+    }
+    if (body.lockUnchanged) {
+      for (const addr of hit.unchanged) {
+        const cell = at(addr);
+        if (!cell || getLocked(cell)) continue;
+        locked++;
+        if (!dryRun) setLocked(cell, true);
+      }
+    }
+
+    const parts: string[] = [];
+    if (filled) parts.push(`${filled} セルを塗り`);
+    if (unlocked) parts.push(`${unlocked} セルを入力可能に`);
+    if (locked) parts.push(`${locked} セルをロック`);
+    if (!parts.length) continue;
+    details.push({
+      book: book.relPath,
+      sheet: sheetName,
+      message: `記入欄 ${hit.changed.size} / 様式 ${hit.unchanged.size} と判定 — ${parts.join(' / ')}`,
+      count: filled + unlocked + locked,
+    });
+  }
+  return { details, detect };
 }
 
 export async function applyStep(
@@ -743,6 +826,32 @@ export async function applyStep(
   opts: ApplyOptions = {},
 ): Promise<StepOutcome> {
   const dryRun = opts.dryRun ?? false;
+
+  if (step.body.op === 'detectInputCells') {
+    const { details, detect } = opDetectInputCells(ctx, step.scope, step.body, dryRun);
+    const { hits: _hits, ...report } = detect;
+    const changedCells = details.reduce((n, d) => n + d.count, 0);
+    if (!dryRun && changedCells > 0) {
+      const touched = new Set(details.map((d) => d.book));
+      for (const b of ctx.books) if (touched.has(b.relPath)) b.dirty = true;
+    }
+    return {
+      summary:
+        detect.pairCount === 0
+          ? '年違いで対になるファイルが見つかりませんでした'
+          : `${detect.pairCount} 組 / ${detect.sheetCount} シートを比較し、` +
+            `記入欄 ${detect.changedCount} セル・様式 ${detect.unchangedCount} セルと判定` +
+            (changedCells ? ` (${changedCells} 箇所を変更)` : ' (変更なし)'),
+      changedCells,
+      changedSheets: details.length,
+      changedBooks: new Set(details.map((d) => d.book)).size,
+      details,
+      fileRenames: [],
+      targetSheets: detect.sheetCount,
+      detect: report,
+    };
+  }
+
   const targets = resolveTargets(ctx, step.scope);
   const details: OpDetail[] = [];
   const renameLog = new Map<string, string>();

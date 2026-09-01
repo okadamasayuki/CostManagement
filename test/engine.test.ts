@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { applyStep, collectUsedColors, type OpContext } from '../src/excel/ops';
 import { resolveColor } from '../src/excel/color';
 import { isUnderFolder, listFolders } from '../src/excel/folders';
+import { detectInputCells } from '../src/excel/detectInput';
 import type { LoadedWorkbook } from '../src/excel/types';
 import type { RecipeStep, StepBody } from '../src/recipe/types';
 import { DEFAULT_PROTECT_OPTIONS, DEFAULT_YEAR_TARGETS } from '../src/recipe/types';
@@ -516,6 +517,167 @@ async function main(): Promise<void> {
     assert.equal(used[0].count, 3, '多い順に並ぶはず');
     assert.equal(used[1].count, 2);
     assert.ok(used[0].sample.startsWith('S!A'), `場所の例: ${used[0].sample}`);
+  });
+
+  // ------------------------------------------------------------------------
+  section('2 年分を見比べて記入欄を判定する');
+
+  /** 同じ様式の 2 年分。C 列 (予算) だけ毎年書き換わる想定。 */
+  const twoYears = () => {
+    const mk = (id: string, year: number, budgets: number[]) => {
+      const b = makeBook(id, `原価管理${year}.xlsx`, (wb) => {
+        const ws = wb.addWorksheet(`${year}年度`);
+        ws.getCell('A1').value = `${year}年度 原価管理表`;   // 年だけ違う = 様式
+        ws.getCell('A3').value = '費目';                      // 同じ = 様式
+        ws.getCell('B3').value = '前年度実績';                // 同じ = 様式
+        ws.getCell('C3').value = '予算';                      // 同じ = 様式
+        ['材料費', '労務費', '外注費'].forEach((name, i) => {
+          const r = 4 + i;
+          ws.getCell(`A${r}`).value = name;                   // 同じ = 様式
+          ws.getCell(`C${r}`).value = budgets[i];             // 毎年違う = 記入欄
+        });
+        ws.getCell('C7').value = { formula: 'SUM(C4:C6)', result: budgets.reduce((x, y) => x + y, 0) };
+      });
+      b.relPath = `原価管理${year}.xlsx`;
+      return b;
+    };
+    return [mk('b2023', 2023, [100, 200, 300]), mk('b2024', 2024, [150, 250, 350])];
+  };
+
+  await test('毎年書き換わる欄だけを記入欄と判定する', () => {
+    const books = twoYears();
+    const r = detectInputCells(books, { ignoreYearOnly: true, compareFormulaText: true });
+    assert.equal(r.pairCount, 1, '年違いの組が作られるはず');
+    assert.equal(r.sheetCount, 1, 'シート名が年違いでも対応づくはず');
+
+    const hit = r.hits.get('b2024::2024年度')!;
+    assert.ok(hit, '判定結果があるはず');
+    assert.deepEqual([...hit.changed].sort(), ['C4', 'C5', 'C6'], `記入欄: ${[...hit.changed]}`);
+    assert.ok(hit.unchanged.has('A1'), '年だけ違う見出しは様式');
+    assert.ok(hit.unchanged.has('A4'), '費目名は様式');
+    assert.ok(hit.unchanged.has('C7'), '合計の数式は様式 (結果は変わるが式は同じ)');
+    assert.equal(r.yearOnlyCount, 1, '年だけの違いは 1 件 (A1)');
+  });
+
+  await test('年の違いを無視しないと、見出しまで記入欄になってしまう', () => {
+    const r = detectInputCells(twoYears(), { ignoreYearOnly: false, compareFormulaText: true });
+    const hit = r.hits.get('b2024::2024年度')!;
+    assert.ok(hit.changed.has('A1'), '無視しない指定なら A1 も変化として拾う');
+  });
+
+  await test('数式を結果で比べると、合計欄まで記入欄になってしまう', () => {
+    const r = detectInputCells(twoYears(), { ignoreYearOnly: true, compareFormulaText: false });
+    const hit = r.hits.get('b2024::2024年度')!;
+    assert.ok(hit.changed.has('C7'), '結果で比べれば合計欄も変化として拾う');
+  });
+
+  await test('判定結果から、記入欄を色付け・様式をロックできる', async () => {
+    const books = twoYears();
+    const out = await applyStep(
+      step(
+        {
+          op: 'detectInputCells',
+          ignoreYearOnly: true,
+          compareFormulaText: true,
+          fillChanged: 'FFFFFF00',
+          unlockChanged: true,
+          lockUnchanged: true,
+        },
+        { books: 'all', sheets: 'all' },
+      ),
+      ctx(books),
+    );
+    assert.ok(out.changedCells > 0, out.summary);
+
+    const ws = (await roundTrip(books[1])).getWorksheet('2024年度')!;
+    // 記入欄
+    assert.equal(isCellLocked(ws.getCell('C4')), false, '記入欄は入力できるはず');
+    assert.equal(
+      (ws.getCell('C4').fill as { fgColor?: { argb?: string } })?.fgColor?.argb,
+      'FFFFFF00',
+      '記入欄が塗られているはず',
+    );
+    // 様式
+    assert.equal(isCellLocked(ws.getCell('A4')), true, '費目名はロックされるはず');
+    assert.equal(isCellLocked(ws.getCell('A1')), true, '見出しはロックされるはず');
+    assert.equal(isCellLocked(ws.getCell('C7')), true, '合計欄はロックされるはず');
+    assert.equal(ws.getCell('C7').fill, undefined, '合計欄は塗られないはず');
+  });
+
+  await test('組にならないファイルは知らせる', () => {
+    const books = twoYears();
+    const lonely = makeBook('b9', '別の様式2024.xlsx', (wb) => {
+      wb.addWorksheet('S').getCell('A1').value = 'x';
+    });
+    lonely.relPath = '別の様式2024.xlsx';
+    const r = detectInputCells([...books, lonely], {
+      ignoreYearOnly: true,
+      compareFormulaText: true,
+    });
+    assert.deepEqual(r.unpaired, ['別の様式2024.xlsx'], `対にならなかった: ${r.unpaired}`);
+  });
+
+  await test('見比べるだけで、古い方のファイルは書き換えない', () => {
+    // ExcelJS の getRow()/getCell() は「読んだだけ」で行やセルを作ってしまう。
+    // 比較のために古い方を読むとき、これをやると保存時に中身が変わる。
+    const mk = (id: string, year: number, extra: boolean) => {
+      const b = makeBook(id, `様式${year}.xlsx`, (wb) => {
+        const ws = wb.addWorksheet('明細');
+        ws.getCell('A1').value = '費目';
+        ws.getCell('B1').value = year * 10;
+        // 新しい方にだけ、古い方に無い場所のセルがある
+        if (extra) ws.getCell('E9').value = '今年から増えた欄';
+      });
+      b.relPath = `様式${year}.xlsx`;
+      return b;
+    };
+    const older = mk('old', 2024, false);
+    const books = [older, mk('new', 2025, true)];
+    const r = detectInputCells(books, { ignoreYearOnly: true, compareFormulaText: true });
+    assert.equal(r.pairCount, 1);
+
+    const ws = older.wb.getWorksheet('明細')!;
+    assert.equal(ws.rowCount, 1, `古い方に行が増えている (rowCount=${ws.rowCount})`);
+    assert.equal(ws.findRow(9), undefined, '古い方に無い行を作ってしまっている');
+    assert.equal(older.dirty, false, '古い方が変更済みになっている');
+  });
+
+  await test('判定の例は、Excel で見えるとおりの表記で出す', () => {
+    const mk = (id: string, year: number, v: number) => {
+      const b = makeBook(id, `予算${year}.xlsx`, (wb) => {
+        const ws = wb.addWorksheet('明細');
+        const c = ws.getCell('B2');
+        c.value = v;
+        c.numFmt = '#,##0';
+      });
+      b.relPath = `予算${year}.xlsx`;
+      return b;
+    };
+    const r = detectInputCells([mk('a', 2024, 1234567), mk('b', 2025, 2345678)], {
+      ignoreYearOnly: true,
+      compareFormulaText: true,
+    });
+    assert.equal(r.samples.length, 1, `例の件数: ${r.samples.length}`);
+    assert.equal(r.samples[0].before, '1,234,567', `前年の表記: ${r.samples[0].before}`);
+    assert.equal(r.samples[0].after, '2,345,678', `今年の表記: ${r.samples[0].after}`);
+  });
+
+  await test('フォルダーが年で分かれていても対応づく', () => {
+    const mk = (id: string, year: number, v: number) => {
+      const b = makeBook(id, '実績.xlsx', (wb) => {
+        const ws = wb.addWorksheet('明細');
+        ws.getCell('A1').value = '費目';
+        ws.getCell('B1').value = v;
+      });
+      b.relPath = `原価/${year}年度/東京/実績.xlsx`;
+      return b;
+    };
+    const r = detectInputCells([mk('a', 2023, 10), mk('b', 2024, 20)], {
+      ignoreYearOnly: true,
+      compareFormulaText: true,
+    });
+    assert.equal(r.pairCount, 1, 'フォルダー名の年でも対応づくはず');
+    assert.ok(r.hits.get('b::明細')!.changed.has('B1'));
   });
 
   // ------------------------------------------------------------------------

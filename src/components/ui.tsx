@@ -327,9 +327,15 @@ export function Modal(props: {
 export function NoteBox({
   kind = 'info',
   children,
+  testId,
 }: {
   kind?: 'info' | 'warn' | 'ok' | 'err';
   children: ReactNode;
+  testId?: string;
 }) {
-  return <div className={`note-box${kind === 'info' ? '' : ` ${kind}`}`}>{children}</div>;
+  return (
+    <div className={`note-box${kind === 'info' ? '' : ` ${kind}`}`} data-testid={testId}>
+      {children}
+    </div>
+  );
 }

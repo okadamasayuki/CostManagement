@@ -102,6 +102,50 @@ async function makeWideWorkbook(path: string): Promise<void> {
   console.log(`  作成: ${path}`);
 }
 
+/**
+ * 2 年分の比較 (記入欄の自動判定) を試すためのファイル。
+ * 年フォルダーの下に同じ様式を置き、
+ *   ・予算額 (B 列) は毎年書き換わる  → 記入欄
+ *   ・費目名・見出し・合計の数式は同じ → 様式
+ *   ・表題は年の数字だけが違う         → 様式
+ * という作りにしてある。
+ */
+async function makeYearPair(dir: string, year: number): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(`${year}年度`);
+  ws.getColumn(1).width = 18;
+  ws.getColumn(2).width = 14;
+  ws.getColumn(3).width = 22;
+
+  ws.getCell('A1').value = `${year}年度 予算入力表`;
+  ws.getCell('A1').font = { bold: true, size: 13 };
+  ['費目', '予算額', '備考'].forEach((h, i) => {
+    const cell = ws.getRow(3).getCell(i + 1);
+    cell.value = h;
+    cell.font = { bold: true };
+  });
+
+  const items = ['材料費', '労務費', '外注費', '経費', '減価償却費'];
+  items.forEach((name, i) => {
+    const r = 4 + i;
+    ws.getCell(`A${r}`).value = name;
+    // 毎年書き換わる欄。年で額が変わるようにしておく。
+    ws.getCell(`B${r}`).value = (year - 2000) * 100_000 + (i + 1) * 1_000_000;
+    ws.getCell(`B${r}`).numFmt = '#,##0';
+  });
+  ws.getCell('C4').value = '主管部が記入';
+
+  const total = 4 + items.length;
+  ws.getCell(`A${total}`).value = '合計';
+  ws.getCell(`A${total}`).font = { bold: true };
+  ws.getCell(`B${total}`).value = { formula: `SUM(B4:B${total - 1})` };
+  ws.getCell(`B${total}`).numFmt = '#,##0';
+
+  const path = join(dir, `plan_${year}.xlsx`);
+  await wb.xlsx.writeFile(path);
+  console.log(`  作成: ${path}`);
+}
+
 async function main(): Promise<void> {
   const dirs = ASCII ? ['tokyo', 'osaka'] : ['東京', '大阪'];
   for (const d of dirs) mkdirSync(join(OUT, d), { recursive: true });
@@ -113,6 +157,13 @@ async function main(): Promise<void> {
   await makeWorkbook(join(OUT, dirs[1], name(ASCII ? 'osaka' : '大阪')), '大阪支店');
   // 広いシートは、フォルダー読み込みの対象に混ざらないよう 1 つ上に置く
   await makeWideWorkbook(join(OUT, '..', 'wide.xlsx'));
+
+  // 2 年分の比較用も、他のテストに混ざらないよう別のフォルダーに置く
+  for (const y of [2024, 2025]) {
+    const dir = join(OUT, '..', 'years', String(y));
+    mkdirSync(dir, { recursive: true });
+    await makeYearPair(dir, y);
+  }
   console.log('完了');
 }
 

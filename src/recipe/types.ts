@@ -144,6 +144,26 @@ export type StepBody =
       action: ConditionAction;
       range: RangeSpec;
     }
+  /**
+   * 2 年分のファイルを見比べて「毎年書き換えられている欄」を判定し、
+   * まとめて色付け / ロック設定する。
+   *
+   * 同じ様式のファイルが年違いで揃っていることが前提。
+   * 値が変わっているセルを「記入欄」、変わらないセルを「様式」とみなす。
+   */
+  | {
+      op: 'detectInputCells';
+      /** 年度の数字だけの違いは様式とみなす */
+      ignoreYearOnly: boolean;
+      /** 数式は式そのもので比べる (合計欄を記入欄と誤判定しないため) */
+      compareFormulaText: boolean;
+      /** 記入欄と判定したセルを塗る色 (null なら塗らない) */
+      fillChanged: string | null;
+      /** 記入欄と判定したセルのロックを外す */
+      unlockChanged: boolean;
+      /** 様式と判定したセルをロックする */
+      lockUnchanged: boolean;
+    }
   /** ロック状態に応じて一括で塗る */
   | {
       op: 'fillByLockState';
