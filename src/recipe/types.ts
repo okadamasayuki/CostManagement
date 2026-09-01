@@ -91,6 +91,15 @@ export type StepBody =
       /** match='in' … 指定色のセル / 'out' … 指定色以外のセル */
       match: 'in' | 'out';
       locked: boolean;
+      /**
+       * match='out' のとき、指定色のセルを逆の状態にするか。
+       *
+       * Excel のセルは既定で全てロック済みのため、「指定色以外をロック」
+       * だけでは何も変わらず、肝心の指定色のセルもロックされたままになる。
+       * 「この色の欄だけ入力させたい」という使い方をそのまま実現するために、
+       * 既定で有効にする。
+       */
+      alsoSetMatched?: boolean;
       /** 'out' のとき、色の付いていないセルも対象に含めるか */
       includeUnfilled: boolean;
       range: RangeSpec;

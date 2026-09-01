@@ -353,6 +353,65 @@ async function main(): Promise<void> {
     assert.equal(isCellLocked(ws.getCell('A1')), true, '塗りなしは対象外のはず');
   });
 
+  await test('「指定色以外をロック」で、その色のセルが入力可能になる', async () => {
+    // Excel のセルは既定で全てロック済みなので、「以外をロック」だけでは
+    // 何も変わらず、肝心の色付きセルもロックされたままになってしまう。
+    // 「この色の欄だけ入力させたい」がそのまま実現できることを確かめる。
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('入力');
+      for (let r = 1; r <= 3; r++) {
+        for (let c = 1; c <= 3; c++) {
+          const cell = ws.getRow(r).getCell(c);
+          cell.value = 'v';
+          if (c === 2) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+          }
+        }
+      }
+    });
+    const out = await applyStep(
+      step({
+        op: 'setLockByFill',
+        colorKeys: ['argb:FFFFFF00'],
+        match: 'out',
+        locked: true,
+        includeUnfilled: true,
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    assert.ok(out.changedCells > 0, '「変更なし」になってはいけない');
+
+    const ws = (await roundTrip(book)).getWorksheet('入力')!;
+    assert.equal(isCellLocked(ws.getCell('B2')), false, '黄色は入力できるはず');
+    assert.equal(isCellLocked(ws.getCell('B1')), false, '黄色は入力できるはず');
+    assert.equal(isCellLocked(ws.getCell('A1')), true, '黄色以外はロック');
+    assert.equal(isCellLocked(ws.getCell('C3')), true, '黄色以外はロック');
+  });
+
+  await test('逆にする指定を外せば、指定色はそのまま', async () => {
+    const book = makeBook('b1', 'a.xlsx', (wb) => {
+      const ws = wb.addWorksheet('S');
+      ws.getCell('A1').value = 'x';
+      ws.getCell('B1').value = 'y';
+      ws.getCell('B1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } };
+    });
+    await applyStep(
+      step({
+        op: 'setLockByFill',
+        colorKeys: ['argb:FFFFFF00'],
+        match: 'out',
+        locked: true,
+        includeUnfilled: true,
+        alsoSetMatched: false,
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const ws = book.wb.getWorksheet('S')!;
+    assert.equal(isCellLocked(ws.getCell('B1')), true, '外したら既定のロックのまま');
+  });
+
   await test('指定した色「以外」をロックできる', async () => {
     const book = makeBook('b1', 'a.xlsx', (wb) => {
       const ws = wb.addWorksheet('入力');

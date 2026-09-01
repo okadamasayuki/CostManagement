@@ -20,6 +20,7 @@ export function ColorLockDialog(props: { onClose(): void }) {
   const [match, setMatch] = useState<'in' | 'out'>('in');
   const [locked, setLocked] = useState(false);
   const [includeUnfilled, setIncludeUnfilled] = useState(true);
+  const [alsoSetMatched, setAlsoSetMatched] = useState(true);
   const [preview, setPreview] = useState<string | null>(null);
 
   const scope = store.scope;
@@ -49,6 +50,7 @@ export function ColorLockDialog(props: { onClose(): void }) {
       match,
       locked,
       includeUnfilled,
+      alsoSetMatched,
       range: { kind: 'used' },
     };
   }
@@ -225,6 +227,19 @@ export function ColorLockDialog(props: { onClose(): void }) {
             />
           </div>
         )}
+        {match === 'out' && (
+          <div style={{ paddingLeft: 20 }}>
+            <Check
+              label={`選んだ色のセルは逆に${locked ? '入力できるようにする' : 'ロックする'}`}
+              checked={alsoSetMatched}
+              onChange={(v) => {
+                setAlsoSetMatched(v);
+                setPreview(null);
+              }}
+              title="Excel のセルは既定で全てロック済みなので、これを外すと選んだ色のセルもロックされたままになります"
+            />
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 14, marginTop: 4 }}>
           <label className="check">
             <input
@@ -268,12 +283,16 @@ export function ColorLockDialog(props: { onClose(): void }) {
         </NoteBox>
       )}
 
-      {!locked && (
-        <NoteBox>
-          ロックを解除しただけでは Excel 上の動作は変わりません。
-          仕上げに「ロック」タブの<b>「シート保護を有効化」</b>を実行してください。
-        </NoteBox>
-      )}
+      <NoteBox>
+        ロックの設定だけでは Excel 上の動作は変わりません。
+        仕上げに「ロック」タブの<b>「シート保護を有効化」</b>を実行してください。
+        {match === 'out' && alsoSetMatched && (
+          <>
+            <br />
+            この設定では、<b>選んだ色のセルだけが入力できる</b>状態になります。
+          </>
+        )}
+      </NoteBox>
     </Modal>
   );
 }

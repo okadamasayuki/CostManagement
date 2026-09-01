@@ -376,7 +376,7 @@ await check('使われている色の一覧が出る', async () => {
 await check('選んだ色のセルだけロックを解除できる', async () => {
   // 黄色 = 予算欄 C5:C9 の 5 セル
   await page.click('.modal [data-color="argb:FFFFFF00"]');
-  await page.locator('.modal .check:has-text("ロック解除する") input').check();
+  await page.locator('.modal .check:has-text("🔓 ロック解除する") input[type="radio"]').check();
   await page.click('.modal-foot .rbtn:has-text("試算")');
   await waitUntil(
     async () => (await page.locator('.note-box:has-text("試算")').count()) > 0,

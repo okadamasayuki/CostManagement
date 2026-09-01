@@ -395,28 +395,44 @@ function opSetLockByFill(
   const wanted = new Set(body.colorKeys);
   if (wanted.size === 0) return null;
 
+  // 「指定色以外をロック」のとき、指定色のセルは逆の状態にする。
+  // Excel のセルは既定で全てロック済みなので、これが無いと
+  // 「以外をロック」は何も変えず、肝心の指定色のセルもロックされたままになる。
+  const invertMatched = body.match === 'out' && body.alsoSetMatched !== false;
+
   let count = 0;
+  let inverted = 0;
   const ok = forEachCell(t.ws, rect, (cell) => {
     const ref = getFillRef(cell);
-    const isMatch =
-      body.match === 'in'
-        ? ref !== null && wanted.has(ref.key)
-        : ref === null
-          ? body.includeUnfilled
-          : !wanted.has(ref.key);
-    if (!isMatch) return;
-    if (getLocked(cell) === body.locked) return;
-    count++;
-    if (!dryRun) setLocked(cell, body.locked);
+    const matchesColor = ref !== null && wanted.has(ref.key);
+    const isTarget =
+      body.match === 'in' ? matchesColor : ref === null ? body.includeUnfilled : !matchesColor;
+
+    if (isTarget) {
+      if (getLocked(cell) === body.locked) return;
+      count++;
+      if (!dryRun) setLocked(cell, body.locked);
+      return;
+    }
+    if (invertMatched && matchesColor && getLocked(cell) !== !body.locked) {
+      inverted++;
+      if (!dryRun) setLocked(cell, !body.locked);
+    }
   });
-  if (count === 0) return null;
-  return detail(
-    t,
-    `色が${body.match === 'in' ? '一致' : '不一致'}の ${count} セルを${
-      body.locked ? 'ロック' : 'ロック解除'
-    }` + (ok ? '' : SPARSE_NOTE),
-    count,
-  );
+
+  if (count === 0 && inverted === 0) return null;
+  const parts: string[] = [];
+  if (count) {
+    parts.push(
+      `色が${body.match === 'in' ? '一致' : '不一致'}の ${count} セルを${
+        body.locked ? 'ロック' : 'ロック解除'
+      }`,
+    );
+  }
+  if (inverted) {
+    parts.push(`指定色の ${inverted} セルを${body.locked ? '入力可能に' : 'ロック'}`);
+  }
+  return detail(t, parts.join(' / ') + (ok ? '' : SPARSE_NOTE), count + inverted);
 }
 
 function opFillByLockState(

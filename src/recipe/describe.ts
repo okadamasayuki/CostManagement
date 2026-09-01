@@ -85,9 +85,15 @@ export function describeBody(body: StepBody): string {
         body.match === 'in'
           ? `${colors} で塗られているセル`
           : `${colors} 以外で塗られているセル${body.includeUnfilled ? 'と、塗りのないセル' : ''}`;
-      return `${describeRange(body.range)}のうち、${target}を${
+      const main = `${describeRange(body.range)}のうち、${target}を${
         body.locked ? 'ロックする' : 'ロック解除する (入力可能にする)'
       }`;
+      if (body.match === 'out' && body.alsoSetMatched !== false) {
+        return `${main}。あわせて ${colors} のセルを${
+          body.locked ? '入力可能にする' : 'ロックする'
+        }`;
+      }
+      return main;
     }
     case 'fillByLockState':
       return body.colorArgb === null
