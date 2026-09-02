@@ -13,6 +13,7 @@ import { applyStep, collectUsedColors, type OpContext } from '../src/excel/ops';
 import { resolveColor } from '../src/excel/color';
 import { isUnderFolder, listFolders } from '../src/excel/folders';
 import { detectInputCells } from '../src/excel/detectInput';
+import { writeBackToDisk } from '../src/excel/saver';
 import type { LoadedWorkbook } from '../src/excel/types';
 import type { RecipeStep, StepBody } from '../src/recipe/types';
 import { DEFAULT_PROTECT_OPTIONS, DEFAULT_YEAR_TARGETS } from '../src/recipe/types';
@@ -1163,6 +1164,100 @@ async function main(): Promise<void> {
     const ws = book.wb.getWorksheet('S')!;
     assert.equal(isCellLocked(ws.getCell('A1')), false, '空欄の A1 も解除されるはず');
     assert.equal(isCellLocked(ws.getCell('B2')), false, '空欄の B2 も解除されるはず');
+  });
+
+  // ------------------------------------------------------------------------
+  section('元のフォルダーへの書き戻し');
+
+  /** メモリー上のフォルダーを、File System Access API と同じ形で用意する */
+  function makeFakeDir() {
+    const files = new Map<string, Uint8Array>();
+    const dir = {
+      kind: 'directory' as const,
+      name: 'フォルダー',
+      async *values() {},
+      async getFileHandle(name: string) {
+        return {
+          kind: 'file' as const,
+          name,
+          async getFile() {
+            return new File([files.get(name) ?? new Uint8Array()], name);
+          },
+          async createWritable() {
+            const parts: Uint8Array[] = [];
+            return {
+              async write(d: ArrayBuffer | Uint8Array) {
+                parts.push(d instanceof Uint8Array ? d : new Uint8Array(d as ArrayBuffer));
+              },
+              async close() {
+                const total = parts.reduce((n, p) => n + p.length, 0);
+                const out = new Uint8Array(total);
+                let at = 0;
+                for (const p of parts) { out.set(p, at); at += p.length; }
+                files.set(name, out);
+              },
+            };
+          },
+        };
+      },
+      async getDirectoryHandle() { return dir; },
+      async removeEntry(name: string) {
+        if (!files.has(name)) throw new Error('ありません');
+        files.delete(name);
+      },
+    };
+    return { dir, files };
+  }
+
+  const bookWithHandle = async (fileName: string) => {
+    const { dir, files } = makeFakeDir();
+    files.set(fileName, new Uint8Array([1, 2, 3]));
+    const book = makeBook('b1', fileName, (wb) => {
+      wb.addWorksheet('S').getCell('A1').value = 'x';
+    });
+    book.handle = (await dir.getFileHandle(fileName)) as never;
+    book.parentDir = dir as never;
+    return { book, files };
+  };
+
+  await test('名前が変わらないときは、そのまま上書きされる', async () => {
+    const { book, files } = await bookWithHandle('報告書.xlsx');
+    const r = await writeBackToDisk([book]);
+    assert.equal(r.written, 1);
+    assert.equal(r.renamed, 0, '名前は変わっていないはず');
+    assert.deepEqual([...files.keys()], ['報告書.xlsx']);
+    assert.ok((files.get('報告書.xlsx') as Uint8Array).length > 100, '中身が書き込まれているはず');
+  });
+
+  await test('名前が変わると新しい名前で作られ、既定では元も残る', async () => {
+    const { book, files } = await bookWithHandle('2025年度_報告書.xlsx');
+    const r = await writeBackToDisk([book], { b1: '2026年度_報告書.xlsx' });
+    assert.equal(r.written, 1);
+    assert.equal(r.renamed, 1, '名前が変わった件数');
+    assert.equal(r.removedOriginals, 0, '既定では元を消さない');
+    assert.deepEqual(
+      [...files.keys()].sort(),
+      ['2025年度_報告書.xlsx', '2026年度_報告書.xlsx'],
+      `実際: ${[...files.keys()]}`,
+    );
+  });
+
+  await test('指定すれば、名前が変わった元のファイルを削除できる', async () => {
+    const { book, files } = await bookWithHandle('2025年度_報告書.xlsx');
+    const r = await writeBackToDisk([book], { b1: '2026年度_報告書.xlsx' }, undefined, {
+      deleteRenamedOriginal: true,
+    });
+    assert.equal(r.renamed, 1);
+    assert.equal(r.removedOriginals, 1, '元のファイルを消したはず');
+    assert.deepEqual([...files.keys()], ['2026年度_報告書.xlsx'], `実際: ${[...files.keys()]}`);
+  });
+
+  await test('フォルダーから開いていないブックは書き戻せないと分かる', async () => {
+    const book = makeBook('b9', 'a.xlsx', (wb) => { wb.addWorksheet('S').getCell('A1').value = 'x'; });
+    const r = await writeBackToDisk([book]);
+    assert.equal(r.written, 0);
+    assert.equal(r.failed.length, 1);
+    assert.match(r.failed[0].reason, /フォルダーから開いていない/);
   });
 
   // ------------------------------------------------------------------------

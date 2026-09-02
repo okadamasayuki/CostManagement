@@ -27,6 +27,7 @@ export interface FileSystemDirectoryHandleLike extends FileSystemHandleLike {
     name: string,
     options?: { create?: boolean },
   ): Promise<FileSystemDirectoryHandleLike>;
+  removeEntry?(name: string, options?: { recursive?: boolean }): Promise<void>;
   queryPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
   requestPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }

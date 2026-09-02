@@ -80,20 +80,35 @@ export function applyRename(relPath: string, newName: string | undefined): strin
 
 export interface WriteBackResult {
   written: number;
+  /** ファイル名が変わったため、新しい名前で作成したもの */
+  renamed: number;
+  /** 名前が変わったあと、元のファイルを削除できたもの */
+  removedOriginals: number;
   failed: Array<{ relPath: string; reason: string }>;
+}
+
+export interface WriteBackOptions {
+  /**
+   * 名前が変わったとき、元のファイルを削除するか。
+   * 既定は false (残す)。年度更新のように「前年の分も残したい」運用があるため、
+   * 消すのは利用者が明示的に選んだときだけにする。
+   */
+  deleteRenamedOriginal?: boolean;
 }
 
 /**
  * File System Access API で開いたフォルダへ直接上書き保存する。
- * ファイル名が変わる場合は、同じフォルダーに新しい名前で作成する
- * (元のファイルは残す。誤操作時に元へ戻せるようにするため)。
+ * ファイル名が変わる場合は、同じフォルダーに新しい名前で作成する。
+ * 元のファイルは既定では残す (誤操作時に元へ戻せるようにするため)。
+ * deleteRenamedOriginal を指定したときだけ、元のファイルを削除する。
  */
 export async function writeBackToDisk(
   books: LoadedWorkbook[],
   nameOverrides: SaveNameOverride = {},
   onProgress?: (p: ZipProgress) => void,
+  opts: WriteBackOptions = {},
 ): Promise<WriteBackResult> {
-  const result: WriteBackResult = { written: 0, failed: [] };
+  const result: WriteBackResult = { written: 0, renamed: 0, removedOriginals: 0, failed: [] };
   let done = 0;
   for (const book of books) {
     done++;
@@ -109,8 +124,9 @@ export async function writeBackToDisk(
     try {
       const newName = nameOverrides[book.id];
       let target = book.handle as unknown as FileSystemFileHandleLike;
+      const isRename = Boolean(newName && newName !== book.fileName);
 
-      if (newName && newName !== book.fileName) {
+      if (isRename) {
         if (!book.parentDir) {
           result.failed.push({
             relPath: book.relPath,
@@ -118,7 +134,7 @@ export async function writeBackToDisk(
           });
           continue;
         }
-        target = await book.parentDir.getFileHandle(newName, { create: true });
+        target = await book.parentDir.getFileHandle(newName as string, { create: true });
       }
 
       const buf = await toBuffer(book);
@@ -126,6 +142,23 @@ export async function writeBackToDisk(
       await writable.write(buf);
       await writable.close();
       result.written++;
+      if (isRename) {
+        result.renamed++;
+        // 名前が変わったときだけ、元のファイルを消すかどうかの分岐がある
+        if (opts.deleteRenamedOriginal && book.parentDir?.removeEntry) {
+          try {
+            await book.parentDir.removeEntry(book.fileName);
+            result.removedOriginals++;
+          } catch (e) {
+            result.failed.push({
+              relPath: book.relPath,
+              reason: `新しい名前では保存できましたが、元のファイルを削除できませんでした (${
+                e instanceof Error ? e.message : String(e)
+              })`,
+            });
+          }
+        }
+      }
       book.dirty = false;
     } catch (e) {
       result.failed.push({

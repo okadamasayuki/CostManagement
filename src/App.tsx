@@ -184,6 +184,23 @@ function AboutModal({ onClose }: { onClose(): void }) {
         </Btn>
       }
     >
+      {isHosted() && (
+        <NoteBox kind="ok">
+          <b>操作の動画があります。</b>
+          はじめての方は、実際の画面で一通り見ておくと分かりやすいです。
+          <br />
+          <a
+            href="videos.html"
+            target="_blank"
+            rel="noreferrer"
+            data-testid="videos-link"
+            style={{ color: 'var(--excel-green)', fontWeight: 700 }}
+          >
+            ▶ 操作の動画を見る（別のタブで開きます）
+          </a>
+        </NoteBox>
+      )}
+
       <NoteBox kind="ok">
         <b>このツールは外部と一切通信しません。</b>
         読み込んだ Excel はブラウザーの中だけで処理され、社外はもちろん社内サーバーにも送られません。

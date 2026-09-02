@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- このページも外部と通信しない。動画は同じサイト内から読む。 -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; media-src 'self'; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none';"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23217346'/%3E%3Cpath d='M4 4h3l1.5 2.5L10 4h3l-3 4 3 4h-3L8.5 9.5 7 12H4l3-4z' fill='white'/%3E%3C/svg%3E"
+    />
+    <title>操作の動画 — Excel 一括ロック / 年度更新ツール</title>
+    <style>
+      :root {
+        --green: #217346;
+        --green-dark: #0f5132;
+        --ink: #1f2328;
+        --dim: #57606a;
+        --line: #d8dee4;
+        --bg: #f6f8fa;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Meiryo", sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.75;
+      }
+      header {
+        background: var(--green-dark);
+        color: #fff;
+        padding: 22px 24px;
+      }
+      header .inner { max-width: 1040px; margin: 0 auto; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+      header h1 { margin: 0; font-size: 20px; letter-spacing: .02em; }
+      header a { color: #b7e4c7; font-size: 14px; }
+      main { max-width: 1040px; margin: 0 auto; padding: 28px 24px 64px; }
+      .lead {
+        background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--green);
+        border-radius: 6px; padding: 16px 20px; margin: 0 0 30px;
+      }
+      .lead p { margin: 0 0 8px; }
+      .lead p:last-child { margin-bottom: 0; }
+      section { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 22px 24px 26px; margin-bottom: 30px; }
+      h2 { margin: 0 0 4px; font-size: 19px; color: var(--green-dark); }
+      .meta { color: var(--dim); font-size: 13px; margin: 0 0 16px; }
+      video { width: 100%; border-radius: 6px; background: #000; display: block; border: 1px solid var(--line); }
+      .dl { margin: 10px 0 18px; font-size: 13.5px; }
+      .dl a { color: var(--green-dark); }
+      h3 { font-size: 14.5px; margin: 20px 0 8px; color: var(--dim); letter-spacing: .04em; }
+      ol.steps { margin: 0; padding-left: 22px; font-size: 14.5px; }
+      ol.steps li { margin-bottom: 5px; }
+      b { color: #8a4b00; }
+      .note { background: #fffbe6; border: 1px solid #ffe08a; border-radius: 6px; padding: 13px 16px; font-size: 13.5px; margin-top: 18px; }
+      footer { color: var(--dim); font-size: 13px; text-align: center; padding: 0 24px 44px; }
+      @media (max-width: 640px) { main { padding: 18px 14px 48px; } section { padding: 16px 15px 20px; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="inner">
+        <h1>操作の動画</h1>
+        <a href="./">← ツールを開く</a>
+      </div>
+    </header>
+
+    <main>
+      <div class="lead">
+        <p>
+          <b>実際のツールを操作した画面をそのまま録画したもの</b>です。作り物の画面ではありません。
+          説明の字幕だけを重ねています。
+        </p>
+        <p>
+          どちらも、共有フォルダーにある <b>30 個の Excel</b> を対象にしています。
+          ファイル数が何個でも操作は同じです。
+        </p>
+      </div>
+
+      <section>
+        <h2>① 黄色い入力欄だけ入力できるようにする</h2>
+        <p class="meta">5 分 38 秒 ／ 1920×1080</p>
+        <video src="videos/lock-by-color.mp4" controls preload="metadata" playsinline></video>
+        <p class="dl"><a href="videos/lock-by-color.mp4" download>動画をダウンロード (MP4・約 11MB)</a></p>
+        <h3>この動画で分かること</h3>
+        <ol class="steps">
+          <li>ダウンロードした HTML をダブルクリックして開く</li>
+          <li>共有フォルダーを指定して、配下の Excel を 30 個まとめて読み込む</li>
+          <li>「色からロックを設定」で <b>黄色以外をすべてロック</b>（試算 → 実行）</li>
+          <li>画面で結果を確認（斜線＝ロック／黄色＝入力できる）</li>
+          <li>「シート保護を有効化」（<b>これをしないとロックは効きません</b>）</li>
+          <li>「元の場所へ上書き保存」と「ZIP で保存」</li>
+          <li>保存したファイルを読み込み直して確認</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>② 年度をまとめて 1 年進める</h2>
+        <p class="meta">6 分 00 秒 ／ 1920×1080</p>
+        <video src="videos/year-update.mp4" controls preload="metadata" playsinline></video>
+        <p class="dl"><a href="videos/year-update.mp4" download>動画をダウンロード (MP4・約 12MB)</a></p>
+        <h3>この動画で分かること</h3>
+        <ol class="steps">
+          <li>2023・2024 年度の実績はロック済み、2025 年度の記入欄だけ黄色、という状態から始める</li>
+          <li>年は<b>ファイル名・シート名・表題・見出し・注記</b>のあちこちに入っている</li>
+          <li>「年度更新」タブで適用先を全ブック・全シートに</li>
+          <li><b>対象にする年の範囲を絞る</b> — 数量にある「年に見える 4 桁」を守るため</li>
+          <li>「試算」で確認してから実行（30 ファイルが一度に更新）</li>
+          <li>結果を何ファイルか開いて確認</li>
+          <li>「元の場所へ上書き保存」（前年のファイルを残すか消すかも選べます）</li>
+        </ol>
+        <div class="note">
+          <b>年度更新は「年の数字」を書き換える機能です。</b>
+          実績の数値そのものが列ごと動くわけではありません。
+          数量などに年と同じ 4 桁の数字があると年とみなされることがあるので、
+          <b>対象の年を実際に使う範囲に絞り、必ず「試算」で確認</b>してください。
+          動画ではその手順も収録しています。
+        </div>
+      </section>
+
+      <div class="note">
+        <b>収録環境について。</b>
+        この動画は Linux 上で収録しているため、フォルダーを選ぶ画面の見た目は Windows と異なります。
+        収録の都合でフォルダーの選択を自動化していますが、読み込むファイルも保存先も
+        <b>実際の共有フォルダーの実ファイル</b>で、ツールの動作・結果には手を加えていません。
+      </div>
+    </main>
+
+    <footer>Excel 一括ロック / 年度更新ツール — 社内向け・完全オフライン動作</footer>
+  </body>
+</html>

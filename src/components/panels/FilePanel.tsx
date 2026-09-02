@@ -25,6 +25,8 @@ export function FilePanel() {
   const book = currentBook();
   const hasBooks = s.books.length > 0;
   const canWriteBack = s.books.some((b) => b.handle);
+  /** 名前が変わったとき、元のファイルを消すか (既定は残す) */
+  const [deleteRenamedOriginal, setDeleteRenamedOriginal] = useState(false);
 
   async function handleFiles(files: FileList | null) {
     if (!files || !files.length) return;
@@ -132,17 +134,41 @@ export function FilePanel() {
     setConfirmSave(null);
     setBusy('元のフォルダーへ書き戻しています…');
     try {
-      const r = await writeBackToDisk(getState().books, getState().renames, (p) =>
-        setBusy(`書き戻しています… (${p.done}/${p.total})`, p.done, p.total),
+      const r = await writeBackToDisk(
+        getState().books,
+        getState().renames,
+        (p) => setBusy(`書き戻しています… (${p.done}/${p.total})`, p.done, p.total),
+        { deleteRenamedOriginal },
       );
+      /**
+       * 名前が変わったものは「上書き」ではなく新しい名前での作成になる。
+       * そこを混ぜて数えると、元のファイルが残っていることに気付けないので分けて伝える。
+       */
+      const parts: string[] = [];
+      const overwritten = r.written - r.renamed;
+      if (overwritten > 0) parts.push(`${overwritten} 件を上書き`);
+      if (r.renamed > 0) {
+        parts.push(
+          r.removedOriginals > 0
+            ? `${r.renamed} 件を新しい名前で保存 (元のファイルは削除)`
+            : `${r.renamed} 件を新しい名前で保存 (元のファイルは残っています)`,
+        );
+      }
+      const summary = parts.join(' / ') || '変更はありませんでした';
       if (r.failed.length) {
         toast(
           'warn',
-          `${r.written} 件を上書きしました (${r.failed.length} 件は失敗)`,
+          `${summary} (${r.failed.length} 件は失敗)`,
           r.failed.slice(0, 5).map((f) => `${f.relPath}: ${f.reason}`).join('\n'),
         );
       } else {
-        toast('success', `${r.written} 件を元のフォルダーへ上書きしました`);
+        toast(
+          'success',
+          summary,
+          r.renamed > 0 && r.removedOriginals === 0
+            ? '元の名前のファイルも同じフォルダーに残っています。'
+            : undefined,
+        );
       }
     } catch (e) {
       toast('error', '書き戻しに失敗しました', e instanceof Error ? e.message : String(e));
@@ -363,9 +389,29 @@ export function FilePanel() {
                 </tbody>
               </table>
               {confirmSave === 'disk' && (
-                <NoteBox>
-                  名前が変わるファイルは<b>同じフォルダーに新しい名前で作成</b>されます。元のファイルは残ります。
-                </NoteBox>
+                <>
+                  <NoteBox>
+                    名前が変わるファイルは<b>同じフォルダーに新しい名前で作成</b>されます。
+                    {deleteRenamedOriginal ? (
+                      <>
+                        <br />
+                        <b>元の名前のファイルは削除します。</b>
+                      </>
+                    ) : (
+                      <>
+                        <br />
+                        元の名前のファイルは<b>そのまま残ります</b>
+                        （このフォルダーには新旧の両方が並びます）。
+                      </>
+                    )}
+                  </NoteBox>
+                  <Check
+                    label="元の名前のファイルを削除する"
+                    checked={deleteRenamedOriginal}
+                    onChange={setDeleteRenamedOriginal}
+                    title="前年の分を残しておきたい場合はオフのままにしてください"
+                  />
+                </>
               )}
             </>
           )}

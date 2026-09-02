@@ -1240,6 +1240,31 @@ await check('サーバー配信版とローカル版で、使える機能に差�
   assert(local.apis.isSecureContext === true, 'ローカル版が安全なコンテキストでない');
 });
 
+await check('サーバー配信時だけ、動画へのリンクが出る', async () => {
+  /**
+   * 動画は GitHub Pages 上にしか無い。ローカルの HTML から開くと
+   * 404 になってしまうので、サーバー配信のときだけ出す。
+   */
+  await hostedPage.click('[data-testid="guard-badge"] >> nth=1').catch(() => {});
+  await hostedPage.click('.offline-badge:has-text("使い方")');
+  await hostedPage.waitForSelector('.modal');
+  const link = hostedPage.locator('[data-testid="videos-link"]');
+  assert((await link.count()) === 1, 'サーバー配信で動画リンクが出ていない');
+  assert(
+    (await link.getAttribute('href')) === 'videos.html',
+    `リンク先: ${await link.getAttribute('href')}`,
+  );
+  await hostedPage.click('.modal-foot .rbtn');
+
+  await page.click('.offline-badge:has-text("使い方")');
+  await page.waitForSelector('.modal');
+  assert(
+    (await page.locator('[data-testid="videos-link"]').count()) === 0,
+    'ローカル起動なのに動画リンクが出ている (開いても 404 になる)',
+  );
+  await page.click('.modal-foot .rbtn');
+});
+
 await check('違うのは起動元の案内だけ', async () => {
   // 画面で唯一変わってよいのは「どこから開いたか」の案内。
   // (タイトルバーのバッジは遮断件数でも文言が変わるので、案内の方で見る)
