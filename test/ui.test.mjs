@@ -1193,6 +1193,69 @@ await check('サーバー配信でも Excel を処理できる', async () => {
 
 await hostedPage.screenshot({ path: join(SHOTS, '07-hosted.png') });
 
+await check('サーバー配信版とローカル版で、使える機能に差が無い', async () => {
+  /**
+   * 共有フォルダーに置いた版で「できないことがある」と困るため、
+   * 両方の画面を同じ観点で調べて突き合わせる。
+   *
+   * 差が出てよいのは起動元の案内 (文言と色) だけで、
+   * 使える API とリボンの中身は完全に一致していなければならない。
+   */
+  const survey = async (p) => {
+    const apis = await p.evaluate(() => ({
+      showDirectoryPicker: typeof window.showDirectoryPicker,
+      showOpenFilePicker: typeof window.showOpenFilePicker,
+      showSaveFilePicker: typeof window.showSaveFilePicker,
+      cryptoSubtle: typeof crypto?.subtle?.importKey,
+      createObjectURL: typeof URL.createObjectURL,
+      isSecureContext: window.isSecureContext,
+    }));
+    const tabs = await p.locator('.ribbon-tab').allTextContents();
+    const buttons = {};
+    for (const t of tabs) {
+      await p.click(`.ribbon-tab:has-text("${t}")`);
+      buttons[t] = (await p.locator('.ribbon-panel .rbtn-lg, .ribbon-panel .rbtn').allTextContents())
+        .map((x) => x.replace(/\s+/g, ''))
+        .join(',');
+    }
+    return { apis, tabs: tabs.join(' / '), buttons };
+  };
+
+  const local = await survey(page);          // file:// から開いた版
+  const hosted = await survey(hostedPage);   // サーバー配信版
+
+  assert(
+    JSON.stringify(local.apis) === JSON.stringify(hosted.apis),
+    `使える API が違う\n  ローカル: ${JSON.stringify(local.apis)}\n  配信版  : ${JSON.stringify(hosted.apis)}`,
+  );
+  assert(local.tabs === hosted.tabs, `タブが違う: ${local.tabs} / ${hosted.tabs}`);
+  for (const t of Object.keys(local.buttons)) {
+    assert(
+      local.buttons[t] === hosted.buttons[t],
+      `「${t}」タブのボタンが違う\n  ローカル: ${local.buttons[t]}\n  配信版  : ${hosted.buttons[t]}`,
+    );
+  }
+  // File System Access が両方で使えること (上書き保存や フォルダーを開く に必要)
+  assert(local.apis.showDirectoryPicker === 'function', 'ローカル版で showDirectoryPicker が無い');
+  assert(local.apis.isSecureContext === true, 'ローカル版が安全なコンテキストでない');
+});
+
+await check('違うのは起動元の案内だけ', async () => {
+  // 画面で唯一変わってよいのは「どこから開いたか」の案内。
+  // (タイトルバーのバッジは遮断件数でも文言が変わるので、案内の方で見る)
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await hostedPage.click('.ribbon-tab:has-text("ファイル")');
+  const localNote = await page.textContent('.rgroup:has(.rgroup-title:text-is("オフライン利用")) .note-box');
+  const hostedNote = await hostedPage.textContent('.rgroup:has(.rgroup-title:text-is("オフライン利用")) .note-box');
+  assert(localNote.includes('ローカルのファイルから起動'), `ローカル版の案内: ${localNote}`);
+  assert(hostedNote.includes('サーバーから読み込んでいます'), `配信版の案内: ${hostedNote}`);
+  assert(
+    hostedNote.includes('サーバーへ送られることはありません'),
+    '配信版で「送信しない」旨が出ていない',
+  );
+});
+
+
 // --------------------------------------------------------------------------
 // 「サーバーから開いている間に、Excel の中身が外へ出ていないか」の検証。
 // 社内データを扱う以上ここが最重要なので、受け取り側の記録で確かめる。
