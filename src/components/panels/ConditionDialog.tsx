@@ -3,7 +3,7 @@ import { Btn, Check, ColorSwatches, Field, Modal, NoteBox } from '../ui';
 import type { CellCondition, ConditionAction, StepBody } from '../../recipe/types';
 import { DEFAULT_CONDITION } from '../../recipe/types';
 import { describeCondition, describeScope } from '../../recipe/describe';
-import { getState, previewOperation, runOperation, toast, useStore } from '../../state/store';
+import { getState, runOperation, toast, useStore } from '../../state/store';
 
 /**
  * 条件を指定してセルを塗る / ロックする画面。
@@ -20,11 +20,9 @@ export function ConditionDialog(props: { onClose(): void }) {
   const [action, setAction] = useState<'fill' | 'lock' | 'unlock'>('fill');
   const [color, setColor] = useState<string | null>('FFFFF2CC');
   const scopeNow = getState().scope;
-  const [preview, setPreview] = useState<string | null>(null);
 
   const patch = (p: Partial<CellCondition>) => {
     setCondition({ ...condition, ...p });
-    setPreview(null);
   };
 
   function buildCondition(): CellCondition {
@@ -46,11 +44,6 @@ export function ConditionDialog(props: { onClose(): void }) {
     };
   }
 
-  async function doPreview() {
-    const outcome = await previewOperation(buildBody());
-    setPreview(outcome.summary);
-  }
-
   async function doApply() {
     const outcome = await runOperation(buildBody());
     toast(outcome.changedCells ? 'success' : 'info', outcome.summary);
@@ -68,7 +61,6 @@ export function ConditionDialog(props: { onClose(): void }) {
       footer={
         <>
           <Btn onClick={props.onClose}>キャンセル</Btn>
-          <Btn onClick={() => void doPreview()}>試算</Btn>
           <Btn kind="accent" onClick={() => void doApply()}>
             実行する
           </Btn>
@@ -120,7 +112,6 @@ export function ConditionDialog(props: { onClose(): void }) {
           checked={useNumber}
           onChange={(v) => {
             setUseNumber(v);
-            setPreview(null);
           }}
         />
         {useNumber && (
@@ -163,7 +154,6 @@ export function ConditionDialog(props: { onClose(): void }) {
           checked={useText}
           onChange={(v) => {
             setUseText(v);
-            setPreview(null);
           }}
         />
         {useText && (
@@ -209,7 +199,6 @@ export function ConditionDialog(props: { onClose(): void }) {
               checked={action === v}
               onChange={() => {
                 setAction(v);
-                setPreview(null);
               }}
             />
             {label}
@@ -222,7 +211,6 @@ export function ConditionDialog(props: { onClose(): void }) {
             value={color}
             onChange={(c) => {
               setColor(c);
-              setPreview(null);
             }}
           />
         </div>
@@ -238,14 +226,6 @@ export function ConditionDialog(props: { onClose(): void }) {
             ? 'ロックする'
             : '入力できるようにする'}
       </NoteBox>
-
-      {preview && (
-        <NoteBox kind="info">
-          <b>試算:</b> {preview}
-          <br />
-          まだ変更していません。よければ「実行する」を押してください。
-        </NoteBox>
-      )}
     </Modal>
   );
 }

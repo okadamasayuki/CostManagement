@@ -35,6 +35,13 @@ export function LockPanel() {
 
   const selectionA1 = s.selection ? rectToA1(s.selection) : null;
   const ready = s.books.length > 0;
+  // ②の見出しに、いま①で何が選ばれているのかをそのまま出す
+  const rangeLabel =
+    rangeMode === 'used'
+      ? 'データが入っている範囲'
+      : rangeMode === 'a1'
+        ? a1.trim() || 'アドレスで指定した範囲'
+        : (selectionA1 ?? '画面で選んだ範囲');
 
   function resolveRange() {
     const spec = toRangeSpec(rangeMode, a1, selectionA1);
@@ -99,36 +106,39 @@ export function LockPanel() {
 
   return (
     <>
-      <RGroup title="セルのロック">
-        <BigButton
-          icon="🔒"
-          label={<>選択範囲を<br />ロック</>}
-          disabled={!ready}
-          onClick={() => void setLock(true)}
-        />
-        <BigButton
-          icon="🔓"
-          label={<>選択範囲の<br />ロック解除</>}
-          disabled={!ready}
-          onClick={() => void setLock(false)}
-        />
-        <BigButton
-          icon="🎯"
-          label={<>選択範囲以外を<br />ロック</>}
-          primary
-          disabled={!ready}
-          title="指定した範囲だけを入力可能にし、それ以外をすべてロックします"
-          onClick={() => void lockAllExcept()}
-        />
-      </RGroup>
-
-      <RGroup title="シート内のどこを">
+      <RGroup title="① ロックする範囲を決める">
         <RangeSelector
           mode={rangeMode}
           a1={a1}
           selectionA1={selectionA1}
           onModeChange={setRangeMode}
           onA1Change={setA1}
+          note="シートのどこを対象にするかです。右の 3 つのボタンは、ここで決めた範囲に対して効きます。"
+        />
+      </RGroup>
+
+      <RGroup title={`② ${rangeLabel} をどうするか`}>
+        <BigButton
+          icon="🔒"
+          label={<>この範囲を<br />ロック</>}
+          disabled={!ready}
+          title="①で決めた範囲を入力できないようにします"
+          onClick={() => void setLock(true)}
+        />
+        <BigButton
+          icon="🔓"
+          label={<>この範囲の<br />ロック解除</>}
+          disabled={!ready}
+          title="①で決めた範囲だけ入力できるようにします"
+          onClick={() => void setLock(false)}
+        />
+        <BigButton
+          icon="🎯"
+          label={<>この範囲以外を<br />ロック</>}
+          primary
+          disabled={!ready}
+          title="①で決めた範囲だけを入力可能にし、それ以外をすべてロックします"
+          onClick={() => void lockAllExcept()}
         />
       </RGroup>
 

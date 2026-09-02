@@ -549,6 +549,7 @@ function rewriteCellValue(
   mapper: YearMapper,
   includeFormulas: boolean,
   dryRun: boolean,
+  includeNumericCells = true,
 ): boolean {
   const v = cell.value;
   if (v === null || v === undefined || v === '') return false;
@@ -561,6 +562,9 @@ function rewriteCellValue(
   }
 
   if (typeof v === 'number') {
+    // 数量や金額が「2031」のように年と同じ 4 桁になっていることがある。
+    // その取り違えを防ぐため、数字だけのセルは既定で対象外にできる。
+    if (!includeNumericCells) return false;
     const next = mapNumericYear(v, mapper);
     if (next === null || next === v) return false;
     if (!dryRun) cell.value = next;
@@ -635,7 +639,17 @@ function opReplaceYears(
           'formula' in (cell.value as object);
         if (isFormula && !body.targets.formulas) return;
         if (!isFormula && !body.targets.values) return;
-        if (rewriteCellValue(cell, rewrite, mapper, body.targets.formulas, dryRun)) cellCount++;
+        if (
+          rewriteCellValue(
+            cell,
+            rewrite,
+            mapper,
+            body.targets.formulas,
+            dryRun,
+            body.includeNumericCells ?? true,
+          )
+        )
+          cellCount++;
       });
     }
   }

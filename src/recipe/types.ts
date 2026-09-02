@@ -178,6 +178,13 @@ export type StepBody =
       minYear: number;
       maxYear: number;
       wholeNumberOnly: boolean;
+      /**
+       * 「2031」のように数字だけが入っているセルも年とみなすか。
+       * 数量や金額が年と同じ 4 桁になっていることがあるため、
+       * 画面からの操作では既定で false (＝数字だけのセルは触らない)。
+       * 省略時は true = 従来どおり (古い手順書の意味を変えないため)。
+       */
+      includeNumericCells?: boolean;
       targets: YearTargets;
       range: RangeSpec;
     }
@@ -186,6 +193,8 @@ export type StepBody =
       op: 'mapYears';
       pairs: Array<{ from: number; to: number }>;
       wholeNumberOnly: boolean;
+      /** shiftYears と同じ。省略時は true = 従来どおり */
+      includeNumericCells?: boolean;
       targets: YearTargets;
       range: RangeSpec;
     }

@@ -1,29 +1,20 @@
 import { useState } from 'react';
-import {
-  BigButton,
-  Btn,
-  Check,
-  ColorSwatches,
-  NoteBox,
-  RCol,
-  RGroup,
-  } from '../ui';
+import { BigButton, Check, ColorSwatches, NoteBox, RCol, RGroup } from '../ui';
 import { rectToA1 } from '../../excel/cellRef';
-import { argbToCss } from '../../excel/format';
 import { ColorLockDialog } from './ColorLockDialog';
 import { ConditionDialog } from './ConditionDialog';
 import { DetectInputDialog } from './DetectInputDialog';
 import { runOperation, setState, toast, useStore } from '../../state/store';
 
 /**
- * 塗りつぶし操作。
- * 「ロックしていないセル (= 入力してもらう欄) だけ色を付ける」という
- * 実務でよく使う一括処理をワンボタンで行えるようにしている。
+ * 塗りつぶし・色分け操作。
+ *
+ * 一括処理は「色 → ロック」「条件 → 塗る / ロック」「2 年分 → 記入欄の判定」の
+ * 3 つに絞っている。逆向き (ロック状態 → 塗る) は実務で使わないため置いていない。
  */
 export function FormatPanel() {
   const s = useStore();
   const [color, setColor] = useState<string | null>('FFFFF2CC');
-  const [onlyWithValue, setOnlyWithValue] = useState(false);
   const [showColorLock, setShowColorLock] = useState(false);
   const [showCondition, setShowCondition] = useState(false);
   const [showDetect, setShowDetect] = useState(false);
@@ -36,8 +27,7 @@ export function FormatPanel() {
    * (Excel の「塗りつぶしの色」と同じ感覚で使えるように)
    *
    * セルを選んでいないときは色を選ぶだけにする。
-   * こうしておくと「ロック状態で一括」で使う色を、
-   * うっかり塗ってしまわずに変更できる。
+   * (うっかりシート全体を塗ってしまわないように)
    */
   async function pickColor(argb: string | null) {
     setColor(argb);
@@ -53,20 +43,6 @@ export function FormatPanel() {
       op: 'fillRange',
       range: { kind: 'a1', a1: selectionA1 },
       colorArgb: argb,
-    });
-    toast(r.changedCells ? 'success' : 'info', r.summary);
-  }
-
-  async function fillByLock(target: 'locked' | 'unlocked', clear: boolean) {
-    if (!clear && color === null) {
-      toast('warn', '色が選ばれていません', '左の「塗りつぶしの色」で色を選んでください。');
-      return;
-    }
-    const r = await runOperation({
-      op: 'fillByLockState',
-      target,
-      colorArgb: clear ? null : color,
-      onlyUsedRange: onlyWithValue,
     });
     toast(r.changedCells ? 'success' : 'info', r.summary);
   }
@@ -87,56 +63,6 @@ export function FormatPanel() {
             <br />
             右端の四角で任意の色を選べます。
           </div>
-        </RCol>
-      </RGroup>
-
-      <RGroup title="ロック状態で一括">
-        <BigButton
-          icon="🟡"
-          label={<>ロック解除セル<br />を色分け</>}
-          primary
-          disabled={!ready}
-          title="入力してもらう欄 (ロックしていないセル) をまとめて塗ります"
-          onClick={() => void fillByLock('unlocked', false)}
-        />
-        <BigButton
-          icon="⬜"
-          label={<>ロック済みセル<br />を色分け</>}
-          disabled={!ready}
-          onClick={() => void fillByLock('locked', false)}
-        />
-        <RCol>
-          <div
-            style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5 }}
-            title="左の「塗りつぶしの色」で選んだ色を使います"
-          >
-            <span
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: 3,
-                border: '1px solid var(--border-strong)',
-                background: color ? argbToCss(color) : undefined,
-                backgroundImage: color
-                  ? undefined
-                  : 'repeating-linear-gradient(45deg,#fff,#fff 3px,#e11 3px,#e11 4px)',
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ color: 'var(--text-dim)' }}>左で選んだ色を使います</span>
-          </div>
-          <Btn onClick={() => void fillByLock('unlocked', true)} disabled={!ready}>
-            ロック解除セルの塗りを解除
-          </Btn>
-          <Btn onClick={() => void fillByLock('locked', true)} disabled={!ready}>
-            ロック済みセルの塗りを解除
-          </Btn>
-          <Check
-            label="値が入っているセルのみ"
-            checked={onlyWithValue}
-            onChange={setOnlyWithValue}
-            title="空欄には色を付けません"
-          />
         </RCol>
       </RGroup>
 

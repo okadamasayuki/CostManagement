@@ -853,6 +853,60 @@ async function main(): Promise<void> {
     assert.equal(out.fileRenames[0]?.to, '原価管理2025.xlsx', 'ファイル名も更新されるはず');
   });
 
+  await test('数字だけのセルを対象外にすると、数量 2031 は守られる', async () => {
+    const book = makeBook('b1', '2025年度_数量報告書.xlsx', (wb) => {
+      const ws = wb.addWorksheet('2025年度');
+      ws.getCell('A1').value = '2025年度 数量報告書'; // 文字の中の年 → 変わる
+      ws.getCell('B1').value = '2024年度実績'; //          文字の中の年 → 変わる
+      ws.getCell('B2').value = 2031; //   数量 (たまたま年に見える) → 守る
+      ws.getCell('B3').value = 2018; //   数量 (たまたま年に見える) → 守る
+      ws.getCell('B4').value = 184000; // 桁の大きい数量 → もともと対象外
+    });
+
+    await applyStep(
+      step({
+        op: 'shiftYears',
+        delta: 1,
+        minYear: 2015,
+        maxYear: 2035,
+        wholeNumberOnly: true,
+        includeNumericCells: false,
+        targets: { ...DEFAULT_YEAR_TARGETS, fileNames: true },
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+
+    const ws = (await roundTrip(book)).getWorksheet('2026年度');
+    assert.ok(ws, 'シート名は 2026年度 になるはず');
+    assert.equal(ws!.getCell('A1').value, '2026年度 数量報告書');
+    assert.equal(ws!.getCell('B1').value, '2025年度実績');
+    assert.equal(ws!.getCell('B2').value, 2031, '数量 2031 は年ではないので守られるはず');
+    assert.equal(ws!.getCell('B3').value, 2018, '数量 2018 は年ではないので守られるはず');
+    assert.equal(ws!.getCell('B4').value, 184000);
+  });
+
+  await test('省略時は従来どおり、数字だけのセルも年として扱う', async () => {
+    // 古い手順書 (includeNumericCells を持たない JSON) の意味を変えないための確認
+    const book = makeBook('b1', '実績.xlsx', (wb) => {
+      wb.addWorksheet('明細').getCell('A1').value = 2024;
+    });
+    await applyStep(
+      step({
+        op: 'shiftYears',
+        delta: 1,
+        minYear: 2020,
+        maxYear: 2030,
+        wholeNumberOnly: true,
+        targets: DEFAULT_YEAR_TARGETS,
+        range: { kind: 'used' },
+      }),
+      ctx([book]),
+    );
+    const ws = (await roundTrip(book)).getWorksheet('明細');
+    assert.equal(ws!.getCell('A1').value, 2025);
+  });
+
   await test('複数ブック・全シートに一度に適用できる', async () => {
     const mk = (id: string, name: string) =>
       makeBook(id, name, (wb) => {

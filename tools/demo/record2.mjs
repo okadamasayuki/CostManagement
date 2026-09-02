@@ -218,22 +218,6 @@ async function clickOn(sel, opts = {}) {
   if (opts.ring !== false && !opts.keepRing) await unring();
   return b;
 }
-/** 入力欄を実際にクリックして、実際にキーを打つ */
-async function typeInto(sel, text) {
-  await page.locator(sel).first().scrollIntoViewIfNeeded().catch(() => {});
-  const b = await page.locator(sel).first().boundingBox();
-  await ringBox(b, 5);
-  await moveTo(Math.round(OFFX + b.x + b.width / 2), Math.round(OFFY + b.y + b.height / 2));
-  await sleep(FAST ? 30 : 350);
-  x(['click','1']);
-  await sleep(FAST ? 30 : 300);
-  x(['key','--clearmodifiers','ctrl+a']);
-  await sleep(FAST ? 20 : 200);
-  x(['type','--delay', FAST ? '5' : '110', text]);
-  await sleep(FAST ? 40 : 700);
-  await unring();
-}
-
 const wait = async (fn, msg, t = 240000) => {
   const end = Date.now() + t;
   for (;;) { try { if (await fn()) return; } catch {} if (Date.now() > end) throw new Error(msg); await sleep(180); }
@@ -330,60 +314,51 @@ await note('いま何ブック・何シートに当たるかが、その場に�
   '<b>30 ブック / 60 シート が対象</b>と出ています。押す前に確かめられます。');
 await unring();
 await clickOn('.ribbon-tab:has-text("年度更新")', { after: 1000 });
-await ring('.ribbon-panel .rgroup:has(.rgroup-title:text-is("置換する場所"))', 5);
-await note('どこの年を書き換えるかを選びます',
-  '<b>セルの値</b>・<b>数式の中身</b>・<b>シート名</b>は最初から入っています。' +
+await ring('.ribbon-panel .rgroup:has(.rgroup-title:text-is("年をずらす"))', 5);
+await note('やることは「年を +1 年ずらす」の 1 つだけです',
+  '<b>何年と書いてあるかを調べておく必要はありません。</b>' +
+  'ツールが年に見える数字を探して、<b>見つかったものを全部まとめて</b> 1 年進めます。' +
+  '<br>2023→2024、2024→2025、2025→2026 を<b>同時に</b>置き換えるので、' +
+  '2023 が 2025 まで進んでしまう<b>連鎖は起きません</b>。');
+await unring();
+
+await ring('.ribbon-panel .rgroup:has(.rgroup-title:text-is("どこに書いてある年を変えるか"))', 5);
+await note('どこに書いてある年を変えるかを選びます',
+  '<b>セルの文字・数字</b>・<b>数式の中身</b>・<b>シート名</b>は最初から入っています。' +
   '<br>今回は<b>ファイル名</b>にも年が入っているので、これも入れます。');
 await unring();
 await clickOn('.ribbon-panel .check:has-text("ファイル名")', { after: 1200, pad: 3 });
 
 // -------------------------------------------------------------- STEP 6
-await caption('いきなり実行せず、まず「試算」で確認する',
-  '<b>試算は一切変更しません。</b>何がどれだけ変わるかを先に見られます。');
-await hideCap();
-await clickOn('.rbtn-lg:has-text("変更内容を")', { after: 2500 });
-await wait(async () => (await page.locator('.rp-title:has-text("試算結果")').count()) > 0, '試算が出ない');
-await sleep(1200);
-await ring('.rightpanel', 3);
-await note('1 ファイルあたり 8 セル + シート名 という結果',
-  'ファイルごとに<b>どのシートの何セットが変わるか</b>が一覧で出ます。' +
-  '<br>ただし、この数字には<b>気を付けたい分</b>が混ざっています。');
-await unring();
-
-// -------------------------------------------------------------- STEP 7
-await caption('注意 — 数量にも「年に見える 4 桁」がある',
-  '年度更新は <b>4 桁の数字を年とみなして</b>書き換えます。' +
-  '<br>この表の <b>「特注シャフト」</b>は数量が <b>2,031 個 / 2,018 個</b>。このままだと' +
-  '<b>数量まで 1 増えてしまいます</b>。');
+await caption('落とし穴 — 数量にも「年に見える 4 桁」がある',
+  'この表の <b>「特注シャフト」</b>は数量が <b>2,031 個 / 2,018 個</b>。' +
+  '<br>4 桁の数字なので、何も考えずに置き換えると<b>数量まで 1 増えてしまいます</b>。');
 await hideCap();
 await clickOn('.tree-file >> nth=0', { after: 1200 });
 const shaft = await page.locator('.cell', { hasText: '特注シャフト' }).first().boundingBox();
 if (shaft) await ringBox({ x: shaft.x, y: shaft.y, width: shaft.width * 3.4, height: shaft.height }, 3);
-await note('数量の 2,031 / 2,018 も「年」に見えてしまいます',
-  '実務では<b>ここが一番の落とし穴</b>です。試算で気付ければ、実行前に直せます。');
+await note('数量の 2,031 / 2,018 は「年」ではありません',
+  '実務では<b>ここが一番の落とし穴</b>です。');
 await unring();
 
-await caption('対象にする年の範囲を絞る',
-  '「置換の方法」の <b>対象</b> を、実際に使っている <b>2023 〜 2025</b> に絞ります。' +
-  '<br>こうすれば 2,031 や 2,018 は<b>年とみなされず、そのまま残ります</b>。');
+// -------------------------------------------------------------- STEP 7
+await caption('このツールは、最初からその分を守るようにしてあります',
+  '<b>「数字だけのセルも年とみなす」は、はじめから外れています。</b>' +
+  '<br>数量 2,031 個のように<b>数字だけ</b>が入ったセルは触らず、' +
+  '「2025年度」のように<b>文字と一緒に書かれた年</b>だけを書き換えます。');
 await clickOn('.ribbon-tab:has-text("年度更新")', { after: 900 });
-const yearInputs = '.rgroup:has(.rgroup-title:text-is("置換の方法")) input[type="number"]';
-await typeInto(`${yearInputs} >> nth=1`, '2023');
-await typeInto(`${yearInputs} >> nth=2`, '2025');
-await hideCap();
-await clickOn('.rbtn-lg:has-text("変更内容を")', { after: 2500 });
-await wait(async () => (await page.locator('.rp-title:has-text("試算結果")').count()) > 0, '試算が出ない');
-await sleep(1000);
-await ring('.rightpanel', 3);
-await note('8 セル → 6 セル に減りました',
-  '減った 2 セルが、<b>守られた数量</b>です。狙ったところだけが変わる状態になりました。');
+await ring('.ribbon-panel .rgroup:has(.rgroup-title:text-is("間違って変えないための設定"))', 5);
+await sleep(3200);
+await note('外したままで結構です',
+  'ここに<b>チェックを入れたときだけ</b>、数量 2,031 も年として扱われます。' +
+  '<br>ふつうの年度更新では、外したままにしてください。');
 await unring();
 
 // -------------------------------------------------------------- STEP 8
 await caption('実行する — 30 ファイルを一度に',
   '<b>1 個ずつ開いて直す必要はありません。</b>ワンクリックで 30 ファイル・60 シート分が更新されます。');
 await hideCap();
-await clickOn('.rbtn-lg:has-text("年度更新を")', { after: 2500 });
+await clickOn('.rbtn-lg:has-text("年を")', { after: 2500 });
 await wait(async () => (await page.textContent('.grid-canvas')).includes('2026年度'), '年度更新されない');
 await sleep(1500);
 await ring('.rightpanel', 3);
@@ -470,10 +445,10 @@ await hideCap();
 
 await titleCard('まとめ',
   '① 共有フォルダーを指定 → 配下の Excel を全部読み込む<br>' +
-  '② 「年度更新」タブで<b>適用先を全ブック・全シート</b>に<br>' +
-  '③ <b>対象の年を実際に使う範囲に絞る</b>（数量の誤変換を防ぐ）<br>' +
-  '④ <b>試算</b>で確認 → 実行（30 ファイルが一度に更新）<br>' +
-  '⑤ 「元の場所へ上書き保存」',
+  '② リボン下の<b>適用先を「全ブック・全シート」</b>に<br>' +
+  '③ 「年度更新」タブで<b>ファイル名</b>にもチェックを入れる<br>' +
+  '④ <b>「年を +1 年ずらす」を 1 回押す</b>（30 ファイルが一度に更新）<br>' +
+  '⑤ 何ファイルか開いて確かめ、「元の場所へ上書き保存」',
   'ロックや黄色の色分けはそのまま保たれます。外部との通信は一切ありません。', 10000);
 
 } catch (e) {

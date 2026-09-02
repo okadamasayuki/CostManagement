@@ -74,11 +74,13 @@ export function Check(props: {
   onChange(v: boolean): void;
   title?: string;
   disabled?: boolean;
+  testId?: string;
 }) {
   return (
     <label className="check" title={props.title}>
       <input
         type="checkbox"
+        data-testid={props.testId}
         checked={props.checked}
         disabled={props.disabled}
         onChange={(e) => props.onChange(e.target.checked)}
@@ -271,6 +273,8 @@ export function RangeSelector(props: {
   selectionA1: string | null;
   onModeChange(m: RangeMode): void;
   onA1Change(v: string): void;
+  /** この範囲が何に効くのかを、その場で読めるようにする一文 */
+  note?: string;
 }) {
   return (
     <RCol>
@@ -302,6 +306,14 @@ export function RangeSelector(props: {
               ? `現在の選択: ${props.selectionA1}`
               : 'セルを選択してください'
             : 'シートごとに自動判定します'}
+        </div>
+      )}
+      {props.note && (
+        <div
+          style={{ fontSize: 10.5, color: 'var(--text-dim)', width: 196, lineHeight: 1.6 }}
+          data-testid="range-note"
+        >
+          {props.note}
         </div>
       )}
     </RCol>

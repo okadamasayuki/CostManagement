@@ -65,24 +65,21 @@ export function RecipePanel() {
     }
   }
 
-  async function run(dryRun: boolean) {
+  async function run() {
     if (!stepCount) {
       toast('warn', '実行できる手順がありません');
       return;
     }
-    setBusy(dryRun ? '手順を試算しています…' : '手順を実行しています…', 0, stepCount);
+    setBusy('手順を実行しています…', 0, stepCount);
     try {
       const r = await runRecipe(getState().recipe, opContext(), {
-        dryRun,
-        onProgress: (i, total, label) =>
-          setBusy(`${dryRun ? '試算' : '実行'}中: ${label} (${i + 1}/${total})`, i, total),
+        dryRun: false,
+        onProgress: (i, total, label) => setBusy(`実行中: ${label} (${i + 1}/${total})`, i, total),
       });
       setReport(r);
-      if (!dryRun) {
-        const renames = { ...getState().renames };
-        for (const fr of r.fileRenames) renames[fr.bookId] = fr.to;
-        setState({ renames, lastRunReport: r });
-      }
+      const renames = { ...getState().renames };
+      for (const fr of r.fileRenames) renames[fr.bookId] = fr.to;
+      setState({ renames, lastRunReport: r });
       const failed = r.steps.filter((x) => x.error).length;
       // 対象が 1 つも無かった手順は、フォルダー指定が今の構成に
       // 合っていない可能性が高いので目立たせる
@@ -99,7 +96,7 @@ export function RecipePanel() {
       if (!notes.length) notes.push(`${r.steps.length} 手順を処理しました。`);
       toast(
         failed || empty.length ? 'warn' : 'success',
-        `${dryRun ? '試算' : '実行'}完了: ${r.totalChangedCells} 箇所`,
+        `実行完了: ${r.totalChangedCells} 箇所`,
         notes.join('\n'),
       );
     } catch (e) {
@@ -182,17 +179,11 @@ export function RecipePanel() {
       <RGroup title="読み込みと実行">
         <BigButton icon="📂" label={<>手順書を<br />読み込む</>} onClick={() => importInput.current?.click()} />
         <BigButton
-          icon="🔍"
-          label={<>すべて<br />試算</>}
-          disabled={!ready || !stepCount}
-          onClick={() => void run(true)}
-        />
-        <BigButton
           icon="▶️"
           label={<>すべて<br />実行</>}
           primary
           disabled={!ready || !stepCount}
-          onClick={() => void run(false)}
+          onClick={() => void run()}
         />
       </RGroup>
 
@@ -265,14 +256,14 @@ export function RecipePanel() {
 
       {report && (
         <Modal
-          title={`${report.dryRun ? '試算' : '実行'}結果`}
+          title="実行結果"
+
           wide
           onClose={() => setReport(null)}
           footer={<Btn kind="accent" onClick={() => setReport(null)}>閉じる</Btn>}
         >
           <p>
             {report.steps.length} 手順 / 合計 <b>{report.totalChangedCells}</b> 箇所
-            {report.dryRun && '（試算のため、まだ変更されていません）'}
           </p>
           <table className="plain">
             <thead>
@@ -322,11 +313,9 @@ export function RecipePanel() {
               </table>
             </>
           )}
-          {!report.dryRun && (
-            <NoteBox kind="warn">
-              変更はまだメモリー上だけです。「ファイル」タブから<b>保存</b>してください。
-            </NoteBox>
-          )}
+          <NoteBox kind="warn">
+            変更はまだメモリー上だけです。「ファイル」タブから<b>保存</b>してください。
+          </NoteBox>
         </Modal>
       )}
     </>

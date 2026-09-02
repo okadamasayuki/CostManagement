@@ -146,6 +146,31 @@ async function makeYearPair(dir: string, year: number): Promise<void> {
   console.log(`  作成: ${path}`);
 }
 
+/**
+ * 数量が「年に見える 4 桁」になっている表。
+ * 年度更新で数量まで 1 増えてしまわないことの確認に使う。
+ */
+async function makeNumberLookalike(path: string): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(`${YEAR + 1}年度`);
+  ws.getColumn(1).width = 20;
+  ws.getColumn(2).width = 14;
+  ws.getCell('A1').value = `${YEAR + 1}年度 数量報告書`;
+  ws.getCell('A1').font = { bold: true, size: 13 };
+  ws.getCell('A3').value = '品目';
+  ws.getCell('B3').value = `${YEAR}年度実績`;
+  // 数量が 2031 / 2018 = 年と同じ 4 桁。年度更新で変わってはいけない。
+  ws.getCell('A4').value = '特注シャフト';
+  ws.getCell('B4').value = 2031;
+  ws.getCell('A5').value = '防振ゴム';
+  ws.getCell('B5').value = 2018;
+  ws.getCell('A6').value = '鋼材 SS400';
+  ws.getCell('B6').value = 184_000;
+  for (const r of [4, 5, 6]) ws.getCell(`B${r}`).numFmt = '#,##0';
+  await wb.xlsx.writeFile(path);
+  console.log(`  作成: ${path}`);
+}
+
 async function main(): Promise<void> {
   const dirs = ASCII ? ['tokyo', 'osaka'] : ['東京', '大阪'];
   for (const d of dirs) mkdirSync(join(OUT, d), { recursive: true });
@@ -157,6 +182,11 @@ async function main(): Promise<void> {
   await makeWorkbook(join(OUT, dirs[1], name(ASCII ? 'osaka' : '大阪')), '大阪支店');
   // 広いシートは、フォルダー読み込みの対象に混ざらないよう 1 つ上に置く
   await makeWideWorkbook(join(OUT, '..', 'wide.xlsx'));
+
+  // 数量が年に見えるファイルも、他のテストに混ざらないよう別のフォルダーへ
+  const numbersDir = join(OUT, '..', 'numbers');
+  mkdirSync(numbersDir, { recursive: true });
+  await makeNumberLookalike(join(numbersDir, 'quantity_report.xlsx'));
 
   // 2 年分の比較用も、他のテストに混ざらないよう別のフォルダーに置く
   for (const y of [2024, 2025]) {

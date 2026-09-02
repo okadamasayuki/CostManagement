@@ -5,7 +5,6 @@ import {
   moveStep,
   patchStep,
   removeStep,
-  setState,
   toggleStep,
   useStore,
   currentBook,
@@ -22,28 +21,9 @@ function ContextInfo({ view }: { view: SheetView | null }) {
   const s = useStore();
   const book = currentBook();
   const last = s.history[0];
-  const preview = s.preview;
 
   return (
     <div className="rightpanel">
-      {preview && (
-        <div className="rp-section">
-          <div className="rp-title">
-            <span>試算結果 — {preview.label}</span>
-            <span className="spacer" />
-            <button className="icon-btn" title="閉じる" onClick={() => setState({ preview: null })}>
-              ✕
-            </button>
-          </div>
-          <div className="rp-body">
-            <div className="note-box warn" style={{ marginBottom: 8 }}>
-              まだ変更されていません。内容を確認してから実行してください。
-            </div>
-            <OutcomeView outcome={preview.outcome} testId="preview-details" />
-          </div>
-        </div>
-      )}
-
       {view && (
         <div className="rp-section">
           <div className="rp-title">シートの状況</div>
@@ -122,7 +102,7 @@ function ContextInfo({ view }: { view: SheetView | null }) {
               <div style={{ color: 'var(--text-dim)', fontSize: 10.5 }}>
                 {h.at.toLocaleTimeString('ja-JP')} — {h.summary}
               </div>
-              {h.id === last?.id && <OutcomeView outcome={h.outcome} />}
+              {h.id === last?.id && <OutcomeView outcome={h.outcome} testId="last-result" />}
             </div>
           ))}
         </div>

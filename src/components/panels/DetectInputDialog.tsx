@@ -46,7 +46,7 @@ export function DetectInputDialog(props: { onClose(): void }) {
     }
   }, []);
 
-  /** 設定を変えたら試算結果は捨てる (古い数字を見せない) */
+  /** 設定を変えたら判定結果は捨てる (古い数字を見せない) */
   const touch = () => setPreview(null);
 
   function buildBody(): StepBody {
@@ -104,7 +104,7 @@ export function DetectInputDialog(props: { onClose(): void }) {
         <>
           <Btn onClick={props.onClose}>キャンセル</Btn>
           <Btn onClick={() => void doPreview()} disabled={busy}>
-            {busy ? '判定中…' : '判定してみる (試算)'}
+            {busy ? '判定中…' : '先に判定だけしてみる'}
           </Btn>
           <Btn kind="accent" onClick={() => void doApply()} disabled={busy || nothingToDo}>
             実行する
@@ -217,13 +217,13 @@ export function DetectInputDialog(props: { onClose(): void }) {
       )}
 
       <div style={{ marginTop: 12, fontSize: 11, color: 'var(--text-dim)' }}>
-        下の<b>「判定してみる (試算)」</b>を押すと、変更しないまま件数と判定の例を確認できます。
+        下の<b>「先に判定だけしてみる」</b>を押すと、ファイルを変えないまま件数と判定の例を確認できます。
       </div>
 
       {preview && (
         <div data-testid="detect-preview">
           <NoteBox kind={d && d.pairCount > 0 ? 'info' : 'warn'}>
-            <b>試算:</b> {preview.summary}
+            <b>判定結果:</b> {preview.summary}
             {d && d.yearOnlyCount > 0 && (
               <>
                 <br />

@@ -23,6 +23,8 @@ const SHOTS = join(root, '.test-build', 'shots');
 const WIDE_FILE = join(root, '.test-build', 'wide.xlsx');
 /** 2 年分の比較用。年フォルダーの下に同じ様式が 1 つずつ入っている。 */
 const YEARS = join(root, '.test-build', 'years');
+/** 数量が「年に見える 4 桁」になっている表 (取り違えの確認用) */
+const NUMBERS = join(root, '.test-build', 'numbers');
 
 let passed = 0;
 const failures = [];
@@ -145,6 +147,7 @@ for (const required of [
   WIDE_FILE,
   join(SAMPLE, 'cost_2024.xlsx'),
   join(YEARS, '2025', 'plan_2025.xlsx'),
+  join(NUMBERS, 'quantity_report.xlsx'),
 ]) {
   if (!existsSync(required)) {
     console.error(`必要なファイルがありません: ${required}\n  npm run test:ui から実行してください。`);
@@ -302,7 +305,7 @@ await check('大きなシートでも操作がファイル全体に効く', asyn
   await page.click('.ribbon-tab:has-text("年度更新")');
   await page.selectOption('[data-testid="scope-books"]', 'all');
   await page.selectOption('[data-testid="scope-sheets"]', 'all');
-  await page.click('.rbtn-lg:has-text("年度更新を")');
+  await page.click('.rbtn-lg:has-text("年を")');
   await waitUntil(
     async () => (await page.locator('.toast').last().textContent()).includes('箇所'),
     '年度更新が終わらない',
@@ -347,16 +350,36 @@ await check('リボンの適用先にもフォルダー指定が反映される'
   assert(folder.endsWith('tokyo'), `選ばれているフォルダー: ${folder}`);
 });
 
-await check('そのフォルダー配下のブックだけが対象になる', async () => {
-  // 実際には変更せず、試算で対象を確かめる (以降のテストに影響させないため)
-  await page.selectOption('[data-testid="scope-sheets"]', 'all');
-  await page.click('.rbtn-lg:has-text("変更内容を")');
-  await page.waitForSelector('.rp-title:has-text("試算結果")', { timeout: 15000 });
+/**
+ * 実行した結果の内訳 (右パネルの最新履歴) から、どのブック / シートに
+ * 当たったのかを読む。試算ボタンを無くしたので、
+ * 「実際に走らせて、当たった先を確かめる」形に変えている。
+ */
+async function lastResultWhere() {
   await waitUntil(
-    async () => (await page.locator('[data-testid="preview-details"] li').count()) > 0,
-    '試算の内訳が出ない',
+    async () => (await page.locator('[data-testid="last-result"] li').count()) > 0,
+    '実行結果の内訳が出ない',
   );
-  const where = await page.locator('[data-testid="preview-details"] .where').allTextContents();
+  return page.locator('[data-testid="last-result"] .where').allTextContents();
+}
+
+/**
+ * 年度更新を delta 年ぶん実行する。
+ * 適用先の確認に使うので、+1 / -1 でぴったり元に戻る必要がある。
+ * シート名まで変えると「2023年度→2024年度」で名前が衝突して戻せなくなるため、
+ * ここではセルの中身だけを対象にする。
+ */
+async function shiftYears(delta) {
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  await page.locator('[data-testid="year-sheetnames"]').uncheck();
+  await page.fill('[data-testid="year-delta"]', String(delta));
+  await page.click('.rbtn-lg:has-text("年を")');
+}
+
+await check('そのフォルダー配下のブックだけが対象になる', async () => {
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
+  await shiftYears(1);
+  const where = await lastResultWhere();
   assert(where.length > 0, '内訳が空');
   assert(
     where.every((w) => w.includes('tokyo')),
@@ -364,41 +387,52 @@ await check('そのフォルダー配下のブックだけが対象になる', a
   );
   // サブフォルダーを含めて 1 ブック × 3 シートが対象
   assert(where.length === 3, `対象シート数が ${where.length}: ${where.join(' | ')}`);
+  await shiftYears(-1); // 後続のテストのために戻す
 });
 
 await check('最上位を選ぶと全ブックが対象になる', async () => {
   await page.selectOption('[data-testid="scope-folder"]', '');
-  await page.click('.rbtn-lg:has-text("変更内容を")');
-  await waitUntil(async () => {
-    const w = await page.locator('[data-testid="preview-details"] .where').allTextContents();
-    return w.some((x) => x.includes('osaka')) && w.some((x) => x.includes('tokyo'));
-  }, '最上位を選んでも全ブックが対象にならない');
+  await shiftYears(1);
+  const where = await lastResultWhere();
+  assert(
+    where.some((x) => x.includes('osaka')) && where.some((x) => x.includes('tokyo')),
+    `最上位を選んでも全ブックが対象にならない: ${where.join(' | ')}`,
+  );
+  await shiftYears(-1);
 });
 
-await check('文字列の置換もフォルダー指定の中だけに効く', async () => {
-  // 「文字列の置換」はリボンの右端にあり独立して見えるが、
+await check('年ではない文字の置換もフォルダー指定の中だけに効く', async () => {
+  // 「年ではない文字を置き換える」はリボンの右端にあり独立して見えるが、
   // 年度更新と同じ適用先が使われる。それが画面から分かることも確かめる。
   const tokyoPath = await page
     .locator('[data-testid="scope-folder"] option')
     .evaluateAll((els) => els.map((e) => e.value).find((v) => v.endsWith('tokyo')));
   await page.selectOption('[data-testid="scope-folder"]', tokyoPath);
-  const badges = await page.locator('.rgroup:has-text("文字列の置換") .scope-badge').allTextContents();
-  assert(badges.length === 1, '文字列の置換に適用先の表示がない');
+  const grp = '.rgroup:has-text("年ではない文字を置き換える")';
+  const badges = await page.locator(`${grp} .scope-badge`).allTextContents();
+  assert(badges.length === 1, '文字の置換に適用先の表示がない');
   assert(/tokyo/.test(badges[0]), `適用先の表示が想定外: ${badges[0]}`);
   assert(/同じ/.test(badges[0]), '適用先が共通である旨の説明がない');
 
-  await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和6"]', '原価管理表');
-  await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和7"]', '原価集計表');
-  await page.click('.rgroup:has-text("文字列の置換") .rbtn:has-text("試算")');
-  await waitUntil(async () => {
-    const w = await page.locator('[data-testid="preview-details"] .where').allTextContents();
-    return w.length > 0;
-  }, '文字列置換の試算結果が出ない');
-  const where = await page.locator('[data-testid="preview-details"] .where').allTextContents();
+  await page.fill('[data-testid="replace-find"]', '原価管理表');
+  await page.fill('[data-testid="replace-to"]', '原価集計表');
+  await page.click(`${grp} .rbtn:has-text("置き換える")`);
+  const where = await lastResultWhere();
   assert(
     where.every((w) => w.includes('tokyo')),
     `フォルダー外まで対象になっている: ${where.join(' | ')}`,
   );
+
+  // 元に戻す
+  await page.fill('[data-testid="replace-find"]', '原価集計表');
+  await page.fill('[data-testid="replace-to"]', '原価管理表');
+  await page.click(`${grp} .rbtn:has-text("置き換える")`);
+  await waitUntil(
+    async () => (await page.locator('[data-testid="last-result"] li').count()) > 0,
+    '戻す置換が終わらない',
+  );
+  await page.fill('[data-testid="replace-find"]', '');
+  await page.fill('[data-testid="replace-to"]', '');
 });
 
 await check('フォルダー指定を解除して元に戻せる', async () => {
@@ -407,12 +441,15 @@ await check('フォルダー指定を解除して元に戻せる', async () => {
     async () => (await page.locator('.scope-banner').count()) === 0,
     'フォルダー指定が解除されない',
   );
-  // 以降のテストのため、適用先を既定に戻す
+  // 以降のテストのため、読み込み直して既定の適用先に戻す
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await closeAllBooks(page);
+  await page.setInputFiles('input[webkitdirectory]', SAMPLE);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, '読み込み直せない');
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  await page.fill('[data-testid="year-delta"]', '1');
   await page.selectOption('[data-testid="scope-books"]', 'current');
   await page.selectOption('[data-testid="scope-sheets"]', 'current');
-  await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和6"]', '');
-  await page.fill('.rgroup:has-text("文字列の置換") input[placeholder*="令和7"]', '');
-  await page.click('.rp-title:has-text("試算結果") .icon-btn');
 });
 
 await check('適用先はステータスバーにも常に出る', async () => {
@@ -443,14 +480,11 @@ await check('選んだブックだけが処理の対象になる', async () => {
     '適用先が「選んだブック」になっていない',
   );
   await page.selectOption('[data-testid="scope-sheets"]', 'all');
-  await page.click('.rbtn-lg:has-text("変更内容を")');
-  await waitUntil(
-    async () => (await page.locator('[data-testid="preview-details"] li').count()) > 0,
-    '試算が出ない',
-  );
-  const where = await page.locator('[data-testid="preview-details"] .where').allTextContents();
+  await shiftYears(1);
+  const where = await lastResultWhere();
   const books = new Set(where.map((w) => w.split(' / ')[0]));
   assert(books.size === 3, `対象ブック数が ${books.size}: ${[...books].join(', ')}`);
+  await shiftYears(-1);
 });
 
 await check('Ctrl クリックで 1 件ずつ外せる', async () => {
@@ -464,7 +498,6 @@ await check('Ctrl クリックで 1 件ずつ外せる', async () => {
   await page.click('.ribbon-tab:has-text("年度更新")');
   await page.selectOption('[data-testid="scope-books"]', 'current');
   await page.selectOption('[data-testid="scope-sheets"]', 'current');
-  await page.click('.rp-title:has-text("試算結果") .icon-btn');
 });
 
 console.log('\n\x1b[1m色からロックを設定\x1b[0m');
@@ -490,14 +523,6 @@ await check('選んだ色のセルだけロックを解除できる', async () =
   await page.click('.modal [data-color="argb:FFFFFF00"]');
   // 「この色のセルのロックを外す」を選ぶ
   await page.locator('.modal [data-testid="mode-unlock"]').check();
-  await page.click('.modal-foot .rbtn:has-text("試算")');
-  await waitUntil(
-    async () => (await page.locator('.note-box:has-text("試算")').count()) > 0,
-    '試算結果が出ない',
-  );
-  const preview = await page.locator('.note-box:has-text("試算")').textContent();
-  assert(/5 箇所/.test(preview), `試算の件数が想定外: ${preview}`);
-
   await page.click('.modal-foot .rbtn.accent');
   await waitUntil(async () => (await page.locator('.modal').count()) === 0, 'ダイアログが閉じない');
   await waitUntil(
@@ -542,9 +567,26 @@ await check('ドラッグで範囲選択できる', async () => {
   assert(nameBox.includes(':'), `範囲になっていない: ${nameBox}`);
 });
 
-await check('「選択範囲以外をロック」を実行できる', async () => {
+await check('ロックの「範囲」が何に効くのか画面から分かる', async () => {
+  // 以前は「シート内のどこを」という見出しだけで、どのボタンに効くのかが
+  // 分からなかった。①→② の順で、選んだ範囲が見出しにそのまま出る。
   await page.click('.ribbon-tab:has-text("ロック")');
-  await page.click('.rbtn-lg:has-text("選択範囲以外を")');
+  const titles = await page.locator('.ribbon-panel .rgroup-title').allTextContents();
+  assert(titles[0].includes('① ロックする範囲'), `1 つ目の見出し: ${titles[0]}`);
+  assert(/^② /.test(titles[1]), `2 つ目の見出し: ${titles[1]}`);
+  // ②の見出しに、いま選んでいる範囲がそのまま出ている
+  const selected = await page.inputValue('.namebox input');
+  assert(titles[1].includes(selected), `見出し「${titles[1]}」に選択 ${selected} が出ていない`);
+  const note = await page.textContent('[data-testid="range-note"]');
+  assert(/ボタン/.test(note), `範囲の説明: ${note}`);
+  const panel = await page.textContent('.ribbon-panel');
+  assert(panel.includes('この範囲をロック'), 'ボタン名が「この範囲を〜」になっていない');
+  assert(!panel.includes('シート内のどこを'), '古い見出しが残っている');
+});
+
+await check('「この範囲以外をロック」を実行できる', async () => {
+  await page.click('.ribbon-tab:has-text("ロック")');
+  await page.click('.rbtn-lg:has-text("この範囲以外を")');
   // 直近のトースト (読み込み完了の通知がまだ残っていることがある)
   await waitUntil(
     async () => /セル|変更/.test(await page.locator('.toast').last().textContent()),
@@ -635,13 +677,14 @@ await check('セルを選んでいないときは色を選ぶだけで塗らな�
   await waitUntil(async () => (await page.locator('.cell').count()) > 0, 'シートが戻らない');
 });
 
-await check('ロック解除セルを一括で塗れる', async () => {
+await check('「ロック状態で一括」の項目は無くなっている', async () => {
+  // ロック状態から色を塗る (逆向きの操作) は使わないため廃止した。
+  // 残っているのは「色 → ロック」「条件 → 塗る / ロック」「2 年分 → 判定」の 3 つ。
   await page.click('.ribbon-tab:has-text("書式")');
-  await page.click('.rbtn-lg:has-text("ロック解除セル")');
-  await waitUntil(
-    async () => (await page.locator('.cell[style*="background"]').count()) > 0,
-    '塗られたセルが見つからない',
-  );
+  const panel = await page.textContent('.ribbon-panel');
+  assert(!panel.includes('ロック状態で一括'), '「ロック状態で一括」が残っている');
+  assert(!panel.includes('ロック解除セルを色分け'), '「ロック解除セルを色分け」が残っている');
+  assert(panel.includes('色からロック'), '「色からロック」が消えている');
 });
 
 await page.screenshot({ path: join(SHOTS, '03-colored.png') });
@@ -653,11 +696,6 @@ await check('数値が入っているセルだけを塗れる', async () => {
   await page.click('.rbtn-lg:has-text("条件を指定して")');
   await page.waitForSelector('.modal:has-text("条件を指定して")');
   await page.selectOption('[data-testid="cond-kind"]', 'number');
-  await page.click('.modal-foot .rbtn:has-text("試算")');
-  await waitUntil(
-    async () => (await page.locator('.note-box:has-text("試算")').count()) > 0,
-    '試算が出ない',
-  );
   await page.click('.modal-foot .rbtn.accent');
   await waitUntil(async () => (await page.locator('.modal').count()) === 0, '閉じない');
 
@@ -696,21 +734,31 @@ console.log('\n\x1b[1m年度更新\x1b[0m');
 
 await check('全ブック・全シートを対象にできる', async () => {
   await page.click('.ribbon-tab:has-text("年度更新")');
+  // 適用先の確認テストでシート名を外していたので、既定に戻す
+  await page.locator('[data-testid="year-sheetnames"]').check();
   await page.selectOption('[data-testid="scope-books"]', 'all');
   await page.selectOption('[data-testid="scope-sheets"]', 'all');
   assert((await page.inputValue('[data-testid="scope-books"]')) === 'all', 'ブックの指定が反映されない');
   assert((await page.inputValue('[data-testid="scope-sheets"]')) === 'all', 'シートの指定が反映されない');
 });
 
-await check('試算では値が変わらない', async () => {
-  await page.click('.rbtn-lg:has-text("変更内容を")');
-  await page.waitForSelector('.rp-title:has-text("試算結果")', { timeout: 10000 });
-  const text = await page.textContent('.grid-canvas');
-  assert(text.includes('2024年度'), '試算なのに値が変わっている');
+await check('年度更新のボタンは、ずらす年数がそのまま出ている', async () => {
+  // 「試算 → 実行」の 2 段構えをやめたので、押す前に何が起きるかが
+  // ボタンの文字だけで分かることを確かめる
+  await page.fill('[data-testid="year-delta"]', '2');
+  await waitUntil(
+    async () => (await page.textContent('.ribbon-panel')).includes('年を +2 年'),
+    'ボタンにずらす年数が出ない',
+  );
+  await page.fill('[data-testid="year-delta"]', '1');
+  await waitUntil(
+    async () => (await page.textContent('.ribbon-panel')).includes('年を +1 年'),
+    'ボタンの表示が戻らない',
+  );
 });
 
 await check('年度更新を実行すると 2024 が 2025 になる', async () => {
-  await page.click('.rbtn-lg:has-text("年度更新を")');
+  await page.click('.rbtn-lg:has-text("年を")');
   await waitUntil(
     async () => (await page.textContent('.grid-canvas')).includes('2025年度'),
     '2025 に更新されない',
@@ -846,6 +894,44 @@ await check('ZIP で保存でき、中身が更新後の Excel になってい�
   assert(operated === 1, `シート保護が保存されたブックが ${operated} 冊`);
 });
 
+console.log('\n\x1b[1m年に見える数字を取り違えないか\x1b[0m');
+
+await check('数量など「年に見える数字だけのセル」は既定で守られる', async () => {
+  // 原価管理の表では、数量 2,031 個のように年と同じ 4 桁の数字が入っている
+  // ことがある。既定 (「数字だけのセルも年とみなす」が OFF) では触らない。
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await closeAllBooks(page);
+  await page.setInputFiles('input[webkitdirectory]', NUMBERS);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, '読み込めない');
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  await page.selectOption('[data-testid="scope-books"]', 'all');
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
+
+  assert(
+    !(await page.locator('[data-testid="year-numeric"]').isChecked()),
+    '既定で「数字だけのセルも年とみなす」が ON になっている',
+  );
+  await page.click('.rbtn-lg:has-text("年を")');
+  await waitUntil(
+    async () => (await page.textContent('.grid-canvas')).includes('2026年度'),
+    '年が進まない',
+  );
+  const text = await page.textContent('.grid-canvas');
+  assert(text.includes('2,031'), `数量 2,031 が書き換わってしまった: ${text.slice(0, 300)}`);
+  assert(!text.includes('2,032'), '数量が 1 増えている');
+});
+
+await check('チェックを入れれば数字だけのセルも年として扱える', async () => {
+  await page.locator('[data-testid="year-numeric"]').check();
+  await page.click('.rbtn-lg:has-text("年を")');
+  await waitUntil(
+    async () => (await page.textContent('.grid-canvas')).includes('2,032'),
+    '数字だけのセルが年として扱われない',
+  );
+  await page.locator('[data-testid="year-numeric"]').uncheck();
+});
+
+
 console.log('\n\x1b[1m2 年分を見比べて記入欄を判定\x1b[0m');
 
 await check('2 年分のフォルダーを読み込める', async () => {
@@ -863,7 +949,7 @@ await check('2 年分のフォルダーを読み込める', async () => {
   await page.selectOption('[data-testid="scope-sheets"]', 'current');
 });
 
-await check('試算で「毎年書き換わる欄」が数えられる', async () => {
+await check('先に判定だけして「毎年書き換わる欄」が数えられる', async () => {
   await page.click('.ribbon-tab:has-text("書式")');
   await page.click('.rbtn-lg:has-text("2 年分を見比べて")');
   await page.waitForSelector('.modal:has-text("2 年分を見比べて")');
@@ -876,7 +962,7 @@ await check('試算で「毎年書き換わる欄」が数えられる', async (
     (await page.inputValue('[data-testid="scope-sheets"]')) === 'all',
     '適用先が全シートに広がらない',
   );
-  await page.click('.modal-foot .rbtn:has-text("判定してみる")');
+  await page.click('.modal-foot .rbtn:has-text("判定だけ")');
   await page.waitForSelector('[data-testid="detect-preview"]', { timeout: 20000 });
   const text = await page.textContent('[data-testid="detect-preview"]');
   assert(/1 組/.test(text), `組数が合わない: ${text}`);
@@ -1159,7 +1245,7 @@ await check('ページ本体以外に通信が発生しない', async () => {
   await hostedPage.setInputFiles('input[webkitdirectory]', SAMPLE);
   await hostedPage.waitForSelector('.cell', { timeout: 20000 });
   await hostedPage.click('.ribbon-tab:has-text("年度更新")');
-  await hostedPage.click('.rbtn-lg:has-text("年度更新を")');
+  await hostedPage.click('.rbtn-lg:has-text("年を")');
   await waitUntil(
     async () => (await hostedPage.textContent('.grid-canvas')).includes('2025年度'),
     'サーバー配信時に年度更新が反映されない',

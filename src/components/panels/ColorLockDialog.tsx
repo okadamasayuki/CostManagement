@@ -4,7 +4,7 @@ import { collectUsedColors, type UsedColor } from '../../excel/ops';
 import { argbToCss, readableTextColor } from '../../excel/format';
 import type { StepBody } from '../../recipe/types';
 import { describeScope } from '../../recipe/describe';
-import { getState, opContext, previewOperation, runOperation, toast, useStore } from '../../state/store';
+import { getState, opContext, runOperation, toast, useStore } from '../../state/store';
 
 /**
  * 塗りつぶしの色からロックを設定する画面。
@@ -30,7 +30,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
   const [includeUnfilled, setIncludeUnfilled] = useState(true);
   const [alsoSetMatched, setAlsoSetMatched] = useState(true);
   const scopeNow = getState().scope;
-  const [preview, setPreview] = useState<string | null>(null);
 
   const scope = store.scope;
 
@@ -39,7 +38,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
     // 適用先を変えたら数え直す。
     setColors(null);
     setSelected(new Set());
-    setPreview(null);
     const id = setTimeout(() => setColors(collectUsedColors(opContext(), getState().scope)), 0);
     return () => clearTimeout(id);
   }, [scope.books, scope.sheets, scope.bookGlob, scope.sheetGlob]);
@@ -69,13 +67,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
     };
   }
 
-  async function doPreview() {
-    const body = buildBody();
-    if (!body) return;
-    const outcome = await previewOperation(body);
-    setPreview(outcome.summary);
-  }
-
   async function doApply() {
     const body = buildBody();
     if (!body) return;
@@ -98,9 +89,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
       footer={
         <>
           <Btn onClick={props.onClose}>キャンセル</Btn>
-          <Btn onClick={() => void doPreview()} disabled={!selected.size}>
-            試算
-          </Btn>
           <Btn kind="accent" onClick={() => void doApply()} disabled={!selected.size}>
             実行する
           </Btn>
@@ -163,7 +151,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
                     if (on) next.delete(c.key);
                     else next.add(c.key);
                     setSelected(next);
-                    setPreview(null);
                   }}
                   title={`${c.count.toLocaleString()} セル / 例: ${c.sample}${
                     c.isApprox ? '\nテーマ色のため画面上の色は近似です' : ''
@@ -240,7 +227,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
                 checked={mode === v}
                 onChange={() => {
                   setMode(v);
-                  setPreview(null);
                 }}
               />
               <span>
@@ -278,7 +264,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
               checked={match === 'in'}
               onChange={() => {
                 setMatch('in');
-                setPreview(null);
               }}
             />
             選んだ色の<b>セルを</b>
@@ -289,7 +274,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
               checked={match === 'out'}
               onChange={() => {
                 setMatch('out');
-                setPreview(null);
               }}
             />
             選んだ色<b>以外の</b>セルを
@@ -301,7 +285,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
                 checked={includeUnfilled}
                 onChange={(v) => {
                   setIncludeUnfilled(v);
-                  setPreview(null);
                 }}
               />
             </div>
@@ -313,7 +296,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
                 checked={alsoSetMatched}
                 onChange={(v) => {
                   setAlsoSetMatched(v);
-                  setPreview(null);
                 }}
                 title="Excel のセルは既定で全てロック済みなので、これを外すと選んだ色のセルもロックされたままになります"
               />
@@ -326,7 +308,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
                 checked={!locked}
                 onChange={() => {
                   setLocked(false);
-                  setPreview(null);
                 }}
               />
               🔓 ロック解除する（入力できるようにする）
@@ -337,21 +318,12 @@ export function ColorLockDialog(props: { onClose(): void }) {
                 checked={locked}
                 onChange={() => {
                   setLocked(true);
-                  setPreview(null);
                 }}
               />
               🔒 ロックする
             </label>
           </div>
         </div>
-      )}
-
-      {preview && (
-        <NoteBox kind="info">
-          <b>試算:</b> {preview}
-          <br />
-          まだ変更していません。よければ「実行する」を押してください。
-        </NoteBox>
       )}
 
       {hasApprox && (

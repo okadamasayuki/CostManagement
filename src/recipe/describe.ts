@@ -177,7 +177,10 @@ export function describeBody(body: StepBody): string {
       return (
         `${body.minYear}〜${body.maxYear} 年の西暦をすべて${dir} (${sample})。` +
         `対象: ${describeYearTargets(body.targets)}。` +
-        (body.wholeNumberOnly ? '前後に数字が続く場合 (例: 20240401) は対象外。' : '数字の途中でも置換する。')
+        (body.wholeNumberOnly ? '前後に数字が続く場合 (例: 20240401) は対象外。' : '数字の途中でも置換する。') +
+        ((body.includeNumericCells ?? true)
+          ? '数字だけのセル (例: 2031) も年とみなす。'
+          : '数字だけのセル (例: 数量 2031) は変更しない。')
       );
     }
     case 'mapYears':

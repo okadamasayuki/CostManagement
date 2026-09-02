@@ -69,8 +69,6 @@ export interface AppState {
    * 「まっさらな状態から始めたい」場合に unlock を選ぶ。
    */
   initialLockMode: 'keep' | 'unlock' | 'lock';
-  /** 試算 (dry run) の結果。実行前の確認に使う。 */
-  preview: { label: string; outcome: StepOutcome } | null;
   /**
    * ブックの中身が書き換わるたびに増える。
    * 画面用スナップショットの作り直しをこれだけに絞ることで、
@@ -98,7 +96,6 @@ let state: AppState = {
   lastRunReport: null,
   recording: true,
   initialLockMode: 'keep',
-  preview: null,
   docVersion: 0,
 };
 
@@ -380,7 +377,7 @@ export async function runOperation(
   return outcome;
 }
 
-/** 変更を加えずに件数だけ数える */
+/** 変更を加えずに件数だけ数える (「2 年分から判定」の下見に使う) */
 export async function previewOperation(body: StepBody, scope?: OpScope): Promise<StepOutcome> {
   const step: RecipeStep = {
     id: 'preview',
