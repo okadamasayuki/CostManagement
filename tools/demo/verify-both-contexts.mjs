@@ -62,20 +62,20 @@ async function workflow1(page) {
   await page.click('.rbtn-lg:has-text("フォルダーを開く")');
   await wait(page, async () => (await page.locator('.tree-file').count()) === 30, '読み込めない');
   await page.click('.ribbon-tab:has-text("書式")');
-  await page.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
-  await page.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
+  await page.selectOption('[data-testid="scope-books"]', 'all');
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
   await page.click('.rbtn-lg:has-text("色から")');
   await page.waitForSelector('.modal');
   await wait(page, async () => (await page.locator('.modal [data-color]').count()) > 0, '色一覧が出ない');
   const keys = await page.locator('.modal [data-color]').evaluateAll((els) => els.map((e) => e.getAttribute('data-color')));
   await page.click(`.modal [data-color="${keys.find((k) => /FFFF00/i.test(k))}"]`);
-  await page.locator('.modal .check:has-text("以外の") input[type="radio"]').check();
-  await page.locator('.modal .check:has-text("🔒 ロックする") input[type="radio"]').check();
+  // 「この色のセルだけ入力できるようにする」を選ぶ
+  await page.locator('.modal [data-testid="mode-only"]').check();
   await page.click('.modal-foot .rbtn.accent');
   await wait(page, async () => (await page.locator('.modal').count()) === 0, '閉じない');
   await page.click('.ribbon-tab:has-text("ロック")');
-  await page.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
-  await page.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
+  await page.selectOption('[data-testid="scope-books"]', 'all');
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
   await page.click('.rbtn-lg:has-text("シート保護を有効化")');
   await wait(page, async () => (await page.textContent('.rp-body')).includes('保護'), '保護できない');
   await page.click('.ribbon-tab:has-text("ファイル")');
@@ -92,8 +92,8 @@ async function workflow2(page) {
   await page.click('.rbtn-lg:has-text("フォルダーを開く")');
   await wait(page, async () => (await page.locator('.tree-file').count()) === 30, '読み込めない');
   await page.click('.ribbon-tab:has-text("年度更新")');
-  await page.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
-  await page.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
+  await page.selectOption('[data-testid="scope-books"]', 'all');
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
   await page.locator('.check:has-text("ファイル名") input').check();
   const nums = page.locator('.rgroup:has(.rgroup-title:text-is("置換の方法")) input[type="number"]');
   await nums.nth(1).fill('2023');

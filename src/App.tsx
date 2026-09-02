@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type ExcelJS from 'exceljs';
 import { Ribbon } from './components/Ribbon';
+import { ScopeBar } from './components/ScopeBar';
 import { FileTree } from './components/FileTree';
 import { Grid } from './components/Grid';
 import { SheetTabs } from './components/SheetTabs';
@@ -88,6 +89,7 @@ export default function App() {
       </div>
 
       <Ribbon />
+      <ScopeBar />
 
       <div className="main">
         <FileTree />

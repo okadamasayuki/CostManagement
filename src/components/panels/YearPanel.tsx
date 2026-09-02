@@ -9,7 +9,6 @@ import {
   RCol,
   RGroup,
   ScopeBadge,
-  ScopeSelector,
   toRangeSpec,
   type RangeMode,
 } from '../ui';
@@ -221,7 +220,7 @@ export function YearPanel() {
         </RCol>
       </RGroup>
 
-      <RGroup title="対象">
+      <RGroup title="シート内のどこを">
         <RangeSelector
           mode={rangeMode}
           a1={a1}
@@ -229,7 +228,6 @@ export function YearPanel() {
           onModeChange={setRangeMode}
           onA1Change={setA1}
         />
-        <ScopeSelector scope={s.scope} onChange={(scope) => setState({ scope })} />
       </RGroup>
 
       <RGroup title="実行">

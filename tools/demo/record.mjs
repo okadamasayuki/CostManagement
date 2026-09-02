@@ -63,6 +63,7 @@ await page.exposeBinding('__fsWrite', async (_s, rel, b64) => {
   writeFileSync(join(currentRoot, rel), Buffer.from(b64, 'base64'));
   return true;
 });
+await page.exposeBinding('__fsRemove', async (_s, rel) => { rmSync(join(currentRoot, rel), { force: true }); return true; });
 await page.exposeBinding('__fsRootName', async () => currentRoot.split('/').pop());
 await page.addInitScript(() => {
   const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -93,6 +94,7 @@ await page.addInitScript(() => {
       }
     },
     async getFileHandle(n) { return makeFile(n, rel ? `${rel}/${n}` : n); },
+    async removeEntry(n) { await window.__fsRemove(rel ? `${rel}/${n}` : n); },
   });
   window.showDirectoryPicker = async () => makeDir(await window.__fsRootName(), '');
 });
@@ -148,7 +150,7 @@ await page.evaluate(() => {
 });
 
 let step = 0;
-const TOTAL = 11;
+const TOTAL = 10;
 async function caption(title, desc, opts = {}) {
   if (!opts.keepStep) step++;
   await page.evaluate(([n, total, t, d, top]) => {
@@ -185,6 +187,7 @@ async function ringBox(b, pad = 6) {
   }, [b, pad]);
 }
 async function ring(sel, pad = 6) {
+  await page.locator(sel).first().scrollIntoViewIfNeeded().catch(() => {});
   const b = await page.locator(sel).first().boundingBox();
   if (b) await ringBox(b, pad);
   return b;
@@ -202,6 +205,9 @@ async function moveTo(px, py, steps = 22) {
   await sleep(240);
 }
 async function clickOn(sel, opts = {}) {
+  // 枠の外へスクロールしていると、実クリックが別の場所に当たってしまう
+  await page.locator(sel).first().scrollIntoViewIfNeeded().catch(() => {});
+  await sleep(FAST ? 20 : 250);
   const b = await page.locator(sel).first().boundingBox();
   if (!b) throw new Error(`見つかりません: ${sel}`);
   if (opts.ring !== false) await ringBox(b, opts.pad ?? 6);
@@ -294,19 +300,23 @@ await sleep(1600);
 
 // -------------------------------------------------------------- STEP 5
 await caption('処理の対象を「全部」にする',
-  '操作が<b>どこに効くか</b>を先に決めます。ここを <b>「読み込んだ全ブック」「全シート」</b>にすれば、30 ファイル全部が対象になります。');
-await clickOn('.ribbon-tab:has-text("書式")', { after: 900 });
-await ring('.ribbon-panel .rgroup:has(.rgroup-title:text-is("適用先"))', 5);
-await page.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
-await sleep(900);
-await page.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
-await sleep(1800);
+  'リボンのすぐ下にある <b>「適用先」</b>で、操作が<b>どこに効くか</b>を決めます。' +
+  '<br>ここを <b>「読み込んだ全ブック」「全シート」</b>にすれば、30 ファイル全部が対象になります。');
+await ring('.scopebar', 4);
+await page.selectOption('[data-testid="scope-books"]', 'all');
+await sleep(1000);
+await page.selectOption('[data-testid="scope-sheets"]', 'all');
+await sleep(1500);
+await note('いま何ブック・何シートに当たるかが、その場に出ます',
+  '<b>30 ブック / 60 シート が対象</b>と出ています。押す前に確かめられます。' +
+  '<br>この適用先は<b>ロック・書式・年度更新のすべてで共通</b>です。タブごとに指定し直す必要はありません。');
 await unring();
 
 // -------------------------------------------------------------- STEP 6
 await caption('「色からロックを設定」を開く',
   '<b>黄色いセルだけ入力できるようにする</b>のが目的です。範囲を指定する必要はありません。' +
   '<br>ツールがファイル内で実際に使われている色を数えて、一覧から選べるようにします。');
+await clickOn('.ribbon-tab:has-text("書式")', { after: 900 });
 await clickOn('.rbtn-lg:has-text("色から")', { after: 1400 });
 await page.waitForSelector('.modal');
 await wait(async () => (await page.locator('.modal [data-color]').count()) > 0, '色一覧が出ない');
@@ -320,26 +330,13 @@ await note('使われている色が、セル数つきで一覧に出ます',
 const yellowKey = swatches.find((s) => /FFFF00/i.test(s.key))?.key;
 await clickOn(`.modal [data-color="${yellowKey}"]`, { after: 1200, pad: 4 });
 
-await note('「選んだ色<b>以外</b>をロックする」を選ぶ',
-  '黄色<b>以外</b>のセルをロック対象にします。これで様式の部分が書き換えられなくなります。', { top: true });
-await clickOn('.modal .check:has-text("以外の") ', { after: 1000, pad: 3 });
-await clickOn('.modal .check:has-text("🔒 ロックする")', { after: 1100, pad: 3 });
-
-await ring('.modal .check:has-text("逆に")', 4);
-await note('黄色いセルは、逆に「入力できる」状態にします',
-  'Excel のセルは<b>初期状態で全部ロック済み</b>です。そのため「黄色以外をロック」だけでは黄色も' +
-  'ロックされたままになります。ここが入っていることで、<b>黄色だけが入力できる</b>状態になります。', { top: true });
+await ring('.modal [data-testid="mode-only"]', 5);
+await note('「この色のセルだけ入力できるようにする」を選ぶ',
+  'Excel のセルは<b>もともと全部ロックされた状態</b>です。' +
+  'これを選ぶと、<b>黄色のセルだけロックを外し、それ以外はすべてロック</b>します。' +
+  '<br>配って記入してもらう様式は、たいていこれです。', { top: true });
 await unring();
-
-await note('まず「試算」で、何件変わるか確認できます',
-  '<b>試算では一切変更しません</b>。件数を見て納得してから実行できます。', { top: true });
-await hideCap();
-await clickOn('.modal-foot .rbtn:has-text("試算")', { after: 2200 });
-await wait(async () => (await page.locator('.modal .note-box:has-text("試算")').count()) > 0, '試算が出ない');
-const trial = (await page.locator('.modal .note-box:has-text("試算")').first().textContent()).replace(/\s+/g, ' ').trim();
-await ring('.modal .note-box:has-text("試算")', 5);
-await note('試算の結果', `<b>${trial.replace('試算:', '').split('まだ変更')[0].trim()}</b>`, { top: true });
-await unring();
+await clickOn('.modal [data-testid="mode-only"]', { after: 1200, pad: 3 });
 
 await note('「実行する」を押します', '30 ファイル分の設定が一度に書き換わります。', { top: true, hold: 3600 });
 await hideCap();
@@ -369,8 +366,8 @@ await caption('仕上げに「シート保護」をかける',
   '<b>ここが一番間違えやすいところです。</b>Excel では、ロックの設定だけでは効きません。' +
   '<br><b>シート保護を有効</b>にして、はじめてロックが効きます。');
 await clickOn('.ribbon-tab:has-text("ロック")', { after: 900 });
-await page.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
-await page.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
+await page.selectOption('[data-testid="scope-books"]', 'all');
+await page.selectOption('[data-testid="scope-sheets"]', 'all');
 await sleep(600);
 await hideCap();
 await clickOn('.rbtn-lg:has-text("シート保護を有効化")', { after: 2500 });
@@ -394,10 +391,11 @@ await note('実行前に対象の件数が出ます', '<b>元のファイルを�
 await unring();
 await hideCap();
 await clickOn('.modal-foot .rbtn.accent', { after: 2500 });
-await wait(async () => (await page.textContent('body')).includes('上書きしました'), '上書きできない');
+await wait(async () => /件を上書き|新しい名前で保存/.test(await page.textContent('body')), '上書きできない');
 await sleep(1200);
 await ring('.rightpanel', 3);
-await note('30 件を共有フォルダーへ上書きしました', '元のファイルが、そのまま置き換わりました。');
+await note('30 件を共有フォルダーへ上書きしました',
+  '元のファイルが、そのまま置き換わりました。<b>ファイル名は変わっていない</b>ので、そのまま配れます。');
 await unring();
 
 await note('保存する — ② すべてを ZIP で保存',

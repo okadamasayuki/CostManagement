@@ -318,15 +318,18 @@ await caption('やりたいこと — すべての年を 1 年ぶん進める',
   '<b>連鎖は起きません</b>。');
 
 // -------------------------------------------------------------- STEP 5
-await caption('「年度更新」タブを開いて、対象を決める',
-  'まず<b>適用先</b>を「読み込んだ全ブック」「全シート」にします。これで 30 ファイル全部が対象です。');
-await clickOn('.ribbon-tab:has-text("年度更新")', { after: 1000 });
-await ring('.ribbon-panel .rgroup:has(.rgroup-title:text-is("対象"))', 5);
-await page.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
-await sleep(800);
-await page.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
-await sleep(1600);
+await caption('まず「適用先」を全部にする',
+  'リボンのすぐ下の <b>「適用先」</b>を「読み込んだ全ブック」「全シート」にします。' +
+  '<br>ここは<b>ロック・書式・年度更新のすべてで共通</b>です。タブごとに指定し直す必要はありません。');
+await ring('.scopebar', 4);
+await page.selectOption('[data-testid="scope-books"]', 'all');
+await sleep(1000);
+await page.selectOption('[data-testid="scope-sheets"]', 'all');
+await sleep(1400);
+await note('いま何ブック・何シートに当たるかが、その場に出ます',
+  '<b>30 ブック / 60 シート が対象</b>と出ています。押す前に確かめられます。');
 await unring();
+await clickOn('.ribbon-tab:has-text("年度更新")', { after: 1000 });
 await ring('.ribbon-panel .rgroup:has(.rgroup-title:text-is("置換する場所"))', 5);
 await note('どこの年を書き換えるかを選びます',
   '<b>セルの値</b>・<b>数式の中身</b>・<b>シート名</b>は最初から入っています。' +

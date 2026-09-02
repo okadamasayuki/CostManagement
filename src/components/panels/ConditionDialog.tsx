@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Btn, Check, ColorSwatches, Field, Modal, NoteBox, ScopeSelector } from '../ui';
+import { Btn, Check, ColorSwatches, Field, Modal, NoteBox } from '../ui';
 import type { CellCondition, ConditionAction, StepBody } from '../../recipe/types';
 import { DEFAULT_CONDITION } from '../../recipe/types';
 import { describeCondition, describeScope } from '../../recipe/describe';
-import { previewOperation, runOperation, setState, toast, useStore } from '../../state/store';
+import { getState, previewOperation, runOperation, toast, useStore } from '../../state/store';
 
 /**
  * 条件を指定してセルを塗る / ロックする画面。
@@ -19,6 +19,7 @@ export function ConditionDialog(props: { onClose(): void }) {
   const [useText, setUseText] = useState(false);
   const [action, setAction] = useState<'fill' | 'lock' | 'unlock'>('fill');
   const [color, setColor] = useState<string | null>('FFFFF2CC');
+  const scopeNow = getState().scope;
   const [preview, setPreview] = useState<string | null>(null);
 
   const patch = (p: Partial<CellCondition>) => {
@@ -85,7 +86,12 @@ export function ConditionDialog(props: { onClose(): void }) {
           padding: '8px 10px',
         }}
       >
-        <ScopeSelector scope={s.scope} onChange={(next) => setState({ scope: next })} />
+        <div style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          🎯 適用先:{' '}
+          <b style={{ color: 'var(--excel-green)' }} data-testid="dialog-scope">
+            {describeScope(scopeNow)}
+          </b>
+        </div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6 }}>
           対象: <b style={{ color: 'var(--text)' }}>{describeScope(s.scope)}</b>
           <br />

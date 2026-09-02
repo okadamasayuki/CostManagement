@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Btn, Check, Modal, NoteBox, ScopeSelector } from '../ui';
+import { Btn, Check, Modal, NoteBox } from '../ui';
 import { collectUsedColors, type UsedColor } from '../../excel/ops';
 import { argbToCss, readableTextColor } from '../../excel/format';
 import type { StepBody } from '../../recipe/types';
 import { describeScope } from '../../recipe/describe';
-import { getState, opContext, previewOperation, runOperation, setState, toast, useStore } from '../../state/store';
+import { getState, opContext, previewOperation, runOperation, toast, useStore } from '../../state/store';
 
 /**
  * 塗りつぶしの色からロックを設定する画面。
@@ -17,10 +17,19 @@ export function ColorLockDialog(props: { onClose(): void }) {
   const store = useStore();
   const [colors, setColors] = useState<UsedColor[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [match, setMatch] = useState<'in' | 'out'>('in');
-  const [locked, setLocked] = useState(false);
+  /**
+   * よく使う 3 通りを、そのままの言葉で選べるようにする。
+   * Excel のセルは既定で全てロック済みなので、
+   * 「この色だけ入力できるようにする」= 色以外をロック + 色は解除、になる。
+   * 細かく指定したい場合だけ、従来の指定に切り替えられる。
+   */
+  const [mode, setMode] = useState<'only' | 'unlock' | 'lock'>('only');
+  const [detailed, setDetailed] = useState(false);
+  const [match, setMatch] = useState<'in' | 'out'>('out');
+  const [locked, setLocked] = useState(true);
   const [includeUnfilled, setIncludeUnfilled] = useState(true);
   const [alsoSetMatched, setAlsoSetMatched] = useState(true);
+  const scopeNow = getState().scope;
   const [preview, setPreview] = useState<string | null>(null);
 
   const scope = store.scope;
@@ -43,14 +52,19 @@ export function ColorLockDialog(props: { onClose(): void }) {
     const labels = (colors ?? [])
       .filter((c) => selected.has(c.key))
       .map((c) => argbToCss(c.argb) ?? c.key);
+    // 分かりやすい 3 通りを、実際の指定へ翻訳する
+    const spec = detailed
+      ? { match, locked, includeUnfilled, alsoSetMatched }
+      : mode === 'only'
+        ? { match: 'out' as const, locked: true, includeUnfilled: true, alsoSetMatched: true }
+        : mode === 'unlock'
+          ? { match: 'in' as const, locked: false, includeUnfilled: true, alsoSetMatched: false }
+          : { match: 'in' as const, locked: true, includeUnfilled: true, alsoSetMatched: false };
     return {
       op: 'setLockByFill',
       colorKeys: [...selected],
       colorLabels: labels,
-      match,
-      locked,
-      includeUnfilled,
-      alsoSetMatched,
+      ...spec,
       range: { kind: 'used' },
     };
   }
@@ -69,7 +83,7 @@ export function ColorLockDialog(props: { onClose(): void }) {
     toast(
       outcome.changedCells ? 'success' : 'info',
       outcome.summary,
-      locked ? undefined : '仕上げに「ロック」タブでシート保護を有効にしてください。',
+      '仕上げに「ロック」タブでシート保護を有効にしてください。',
     );
     props.onClose();
   }
@@ -104,7 +118,12 @@ export function ColorLockDialog(props: { onClose(): void }) {
           padding: '8px 10px',
         }}
       >
-        <ScopeSelector scope={scope} onChange={(next) => setState({ scope: next })} />
+        <div style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          🎯 適用先:{' '}
+          <b style={{ color: 'var(--excel-green)' }} data-testid="dialog-scope">
+            {describeScope(scopeNow)}
+          </b>
+        </div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6 }}>
           対象: <b style={{ color: 'var(--text)' }}>{describeScope(scope)}</b>
           <br />
@@ -192,79 +211,140 @@ export function ColorLockDialog(props: { onClose(): void }) {
       )}
 
       <h4 style={{ margin: '16px 0 6px' }}>2. どうするか決める</h4>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <label className="check">
-          <input
-            type="radio"
-            checked={match === 'in'}
-            onChange={() => {
-              setMatch('in');
-              setPreview(null);
+      {!detailed ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {(
+            [
+              [
+                'only',
+                'この色のセル「だけ」入力できるようにする',
+                'それ以外はすべてロックします。配って記入してもらう様式は、たいていこれです。',
+              ],
+              [
+                'unlock',
+                'この色のセルのロックを外す',
+                'それ以外のロック状態はそのままにします。',
+              ],
+              [
+                'lock',
+                'この色のセルをロックする',
+                'それ以外のロック状態はそのままにします。',
+              ],
+            ] as const
+          ).map(([v, title, desc]) => (
+            <label className="check" key={v} style={{ alignItems: 'flex-start' }}>
+              <input
+                type="radio"
+                data-testid={`mode-${v}`}
+                style={{ marginTop: 3 }}
+                checked={mode === v}
+                onChange={() => {
+                  setMode(v);
+                  setPreview(null);
+                }}
+              />
+              <span>
+                <b>{title}</b>
+                {v === 'only' && (
+                  <span style={{ color: 'var(--excel-green)', fontWeight: 700 }}>　← おすすめ</span>
+                )}
+                <br />
+                <span style={{ color: 'var(--text-dim)', fontSize: 11.5 }}>{desc}</span>
+              </span>
+            </label>
+          ))}
+          <button
+            type="button"
+            onClick={() => setDetailed(true)}
+            style={{
+              alignSelf: 'flex-start',
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-dim)',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+              fontSize: 11.5,
+              padding: '2px 0',
             }}
-          />
-          選んだ色の<b>セルを</b>
-        </label>
-        <label className="check">
-          <input
-            type="radio"
-            checked={match === 'out'}
-            onChange={() => {
-              setMatch('out');
-              setPreview(null);
-            }}
-          />
-          選んだ色<b>以外の</b>セルを
-        </label>
-        {match === 'out' && (
-          <div style={{ paddingLeft: 20 }}>
-            <Check
-              label="塗りつぶしのないセルも対象に含める"
-              checked={includeUnfilled}
-              onChange={(v) => {
-                setIncludeUnfilled(v);
-                setPreview(null);
-              }}
-            />
-          </div>
-        )}
-        {match === 'out' && (
-          <div style={{ paddingLeft: 20 }}>
-            <Check
-              label={`選んだ色のセルは逆に${locked ? '入力できるようにする' : 'ロックする'}`}
-              checked={alsoSetMatched}
-              onChange={(v) => {
-                setAlsoSetMatched(v);
-                setPreview(null);
-              }}
-              title="Excel のセルは既定で全てロック済みなので、これを外すと選んだ色のセルもロックされたままになります"
-            />
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 14, marginTop: 4 }}>
-          <label className="check">
-            <input
-              type="radio"
-              checked={!locked}
-              onChange={() => {
-                setLocked(false);
-                setPreview(null);
-              }}
-            />
-            🔓 ロック解除する（入力できるようにする）
-          </label>
-          <label className="check">
-            <input
-              type="radio"
-              checked={locked}
-              onChange={() => {
-                setLocked(true);
-                setPreview(null);
-              }}
-            />
-            🔒 ロックする
-          </label>
+          >
+            細かく指定する…
+          </button>
         </div>
-      </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label className="check">
+            <input
+              type="radio"
+              checked={match === 'in'}
+              onChange={() => {
+                setMatch('in');
+                setPreview(null);
+              }}
+            />
+            選んだ色の<b>セルを</b>
+          </label>
+          <label className="check">
+            <input
+              type="radio"
+              checked={match === 'out'}
+              onChange={() => {
+                setMatch('out');
+                setPreview(null);
+              }}
+            />
+            選んだ色<b>以外の</b>セルを
+          </label>
+          {match === 'out' && (
+            <div style={{ paddingLeft: 20 }}>
+              <Check
+                label="塗りつぶしのないセルも対象に含める"
+                checked={includeUnfilled}
+                onChange={(v) => {
+                  setIncludeUnfilled(v);
+                  setPreview(null);
+                }}
+              />
+            </div>
+          )}
+          {match === 'out' && (
+            <div style={{ paddingLeft: 20 }}>
+              <Check
+                label={`選んだ色のセルは逆に${locked ? '入力できるようにする' : 'ロックする'}`}
+                checked={alsoSetMatched}
+                onChange={(v) => {
+                  setAlsoSetMatched(v);
+                  setPreview(null);
+                }}
+                title="Excel のセルは既定で全てロック済みなので、これを外すと選んだ色のセルもロックされたままになります"
+              />
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 14, marginTop: 4 }}>
+            <label className="check">
+              <input
+                type="radio"
+                checked={!locked}
+                onChange={() => {
+                  setLocked(false);
+                  setPreview(null);
+                }}
+              />
+              🔓 ロック解除する（入力できるようにする）
+            </label>
+            <label className="check">
+              <input
+                type="radio"
+                checked={locked}
+                onChange={() => {
+                  setLocked(true);
+                  setPreview(null);
+                }}
+              />
+              🔒 ロックする
+            </label>
+          </div>
+        </div>
+      )}
 
       {preview && (
         <NoteBox kind="info">
@@ -286,7 +366,7 @@ export function ColorLockDialog(props: { onClose(): void }) {
       <NoteBox>
         ロックの設定だけでは Excel 上の動作は変わりません。
         仕上げに「ロック」タブの<b>「シート保護を有効化」</b>を実行してください。
-        {match === 'out' && alsoSetMatched && (
+        {(detailed ? match === 'out' && alsoSetMatched : mode === 'only') && (
           <>
             <br />
             この設定では、<b>選んだ色のセルだけが入力できる</b>状態になります。

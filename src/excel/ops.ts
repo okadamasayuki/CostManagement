@@ -62,6 +62,15 @@ export function matchesGlob(name: string, glob: string | undefined): boolean {
     .some((g) => globToRegExp(g).test(name));
 }
 
+/**
+ * 指定した適用先が、いま何ブック・何シートに当たるかを数える。
+ * 画面に「30 ブック / 60 シートが対象」と出して、押す前に分かるようにするため。
+ */
+export function countTargets(ctx: OpContext, scope: OpScope): { books: number; sheets: number } {
+  const targets = resolveTargets(ctx, scope);
+  return { books: new Set(targets.map((t) => t.book.id)).size, sheets: targets.length };
+}
+
 export function resolveTargets(ctx: OpContext, scope: OpScope): SheetTarget[] {
   let books: LoadedWorkbook[];
   switch (scope.books) {

@@ -146,7 +146,12 @@ export function ColorSwatches(props: {
 }
 
 /** 操作の適用範囲 (ブック / シート) の指定 */
-export function ScopeSelector(props: { scope: OpScope; onChange(s: OpScope): void }) {
+export function ScopeSelector(props: {
+  scope: OpScope;
+  onChange(s: OpScope): void;
+  /** 横並びにする (リボン下の適用先バー用) */
+  inline?: boolean;
+}) {
   const { scope, onChange } = props;
   const store = useStore();
   // 読み込んだファイルの相対パスから、実際に存在するフォルダーを出す
@@ -156,8 +161,12 @@ export function ScopeSelector(props: { scope: OpScope; onChange(s: OpScope): voi
       ? (folders.find((f) => f.path === (scope.bookFolder ?? ''))?.count ?? 0)
       : 0;
 
+  const Wrap = props.inline
+    ? ({ children }: { children: ReactNode }) => <div className="scope-inline">{children}</div>
+    : RCol;
+
   return (
-    <RCol>
+    <Wrap>
       <Field label="ブック">
         <select
           data-testid="scope-books"
@@ -233,7 +242,7 @@ export function ScopeSelector(props: { scope: OpScope; onChange(s: OpScope): voi
           />
         </Field>
       )}
-    </RCol>
+    </Wrap>
   );
 }
 

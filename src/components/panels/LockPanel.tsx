@@ -8,13 +8,12 @@ import {
   RangeSelector,
   RCol,
   RGroup,
-  ScopeSelector,
   toRangeSpec,
   type RangeMode,
 } from '../ui';
 import { DEFAULT_PROTECT_OPTIONS, type SheetProtectOptions } from '../../recipe/types';
 import { rectToA1 } from '../../excel/cellRef';
-import { runOperation, setState, toast, useStore } from '../../state/store';
+import { runOperation, toast, useStore } from '../../state/store';
 
 /**
  * ロック (セルの保護) 操作。
@@ -123,7 +122,7 @@ export function LockPanel() {
         />
       </RGroup>
 
-      <RGroup title="対象">
+      <RGroup title="シート内のどこを">
         <RangeSelector
           mode={rangeMode}
           a1={a1}
@@ -131,7 +130,6 @@ export function LockPanel() {
           onModeChange={setRangeMode}
           onA1Change={setA1}
         />
-        <ScopeSelector scope={s.scope} onChange={(scope) => setState({ scope })} />
       </RGroup>
 
       <RGroup title="シート全体">

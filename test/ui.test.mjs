@@ -457,7 +457,8 @@ await check('使われている色の一覧が出る', async () => {
 await check('選んだ色のセルだけロックを解除できる', async () => {
   // 黄色 = 予算欄 C5:C9 の 5 セル
   await page.click('.modal [data-color="argb:FFFFFF00"]');
-  await page.locator('.modal .check:has-text("🔓 ロック解除する") input[type="radio"]').check();
+  // 「この色のセルのロックを外す」を選ぶ
+  await page.locator('.modal [data-testid="mode-unlock"]').check();
   await page.click('.modal-foot .rbtn:has-text("試算")');
   await waitUntil(
     async () => (await page.locator('.note-box:has-text("試算")').count()) > 0,
@@ -827,8 +828,8 @@ await check('2 年分のフォルダーを読み込める', async () => {
   // 2 冊を見比べる操作なので、「選択中のブックのみ」のままでは組が作れない。
   // わざと 1 冊だけの指定に戻し、開いたときに広がることを次で確かめる。
   await page.click('.ribbon-tab:has-text("書式")');
-  await page.selectOption('.ribbon-panel [data-testid="scope-books"]', 'current');
-  await page.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'current');
+  await page.selectOption('[data-testid="scope-books"]', 'current');
+  await page.selectOption('[data-testid="scope-sheets"]', 'current');
 });
 
 await check('試算で「毎年書き換わる欄」が数えられる', async () => {
@@ -837,11 +838,11 @@ await check('試算で「毎年書き換わる欄」が数えられる', async (
   await page.waitForSelector('.modal:has-text("2 年分を見比べて")');
   // 開いた時点で、読み込んだ全ブック・全シートが対象になっていること
   assert(
-    (await page.inputValue('.modal [data-testid="scope-books"]')) === 'all',
+    (await page.inputValue('[data-testid="scope-books"]')) === 'all',
     '適用先が全ブックに広がらない',
   );
   assert(
-    (await page.inputValue('.modal [data-testid="scope-sheets"]')) === 'all',
+    (await page.inputValue('[data-testid="scope-sheets"]')) === 'all',
     '適用先が全シートに広がらない',
   );
   await page.click('.modal-foot .rbtn:has-text("判定してみる")');
@@ -1353,8 +1354,8 @@ async function runVideoSteps(p) {
   await p.click('.rbtn-lg:has-text("フォルダーを開く")');
   await waitUntil(async () => (await p.locator('.tree-file').count()) === 3, 'フォルダーを読み込めない');
   await p.click('.ribbon-tab:has-text("書式")');
-  await p.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
-  await p.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
+  await p.selectOption('[data-testid="scope-books"]', 'all');
+  await p.selectOption('[data-testid="scope-sheets"]', 'all');
   await p.click('.rbtn-lg:has-text("色から")');
   await p.waitForSelector('.modal');
   await waitUntil(async () => (await p.locator('.modal [data-color]').count()) > 0, '色の一覧が出ない');
@@ -1362,13 +1363,12 @@ async function runVideoSteps(p) {
   const yellow = keys.find((k) => /FFFF00/i.test(k));
   assert(yellow, `黄色が見つからない: ${keys.join(',')}`);
   await p.click(`.modal [data-color="${yellow}"]`);
-  await p.locator('.modal .check:has-text("以外の") input[type="radio"]').check();
-  await p.locator('.modal .check:has-text("🔒 ロックする") input[type="radio"]').check();
+  await p.locator('.modal [data-testid="mode-only"]').check();
   await p.click('.modal-foot .rbtn.accent');
   await waitUntil(async () => (await p.locator('.modal').count()) === 0, 'モーダルが閉じない');
   await p.click('.ribbon-tab:has-text("ロック")');
-  await p.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
-  await p.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
+  await p.selectOption('[data-testid="scope-books"]', 'all');
+  await p.selectOption('[data-testid="scope-sheets"]', 'all');
   await p.click('.rbtn-lg:has-text("シート保護を有効化")');
   await waitUntil(async () => (await p.textContent('.rp-body')).includes('保護'), 'シート保護できない');
   await p.click('.ribbon-tab:has-text("ファイル")');

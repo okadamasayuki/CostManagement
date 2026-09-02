@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Btn, Check, ColorSwatches, Modal, NoteBox, ScopeSelector } from '../ui';
+import { Btn, Check, ColorSwatches, Modal, NoteBox } from '../ui';
 import type { DetectReport } from '../../excel/ops';
 import type { StepBody } from '../../recipe/types';
 import { describeScope } from '../../recipe/describe';
@@ -22,6 +22,7 @@ export function DetectInputDialog(props: { onClose(): void }) {
   const [color, setColor] = useState<string | null>('FFFFF2CC');
   const [unlockChanged, setUnlockChanged] = useState(true);
   const [lockUnchanged, setLockUnchanged] = useState(true);
+  const scopeNow = getState().scope;
   const [preview, setPreview] = useState<{ summary: string; detect?: DetectReport } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -132,7 +133,12 @@ export function DetectInputDialog(props: { onClose(): void }) {
           marginTop: 10,
         }}
       >
-        <ScopeSelector scope={s.scope} onChange={(next) => setState({ scope: next })} />
+        <div style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          🎯 適用先:{' '}
+          <b style={{ color: 'var(--excel-green)' }} data-testid="dialog-scope">
+            {describeScope(scopeNow)}
+          </b>
+        </div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6 }}>
           対象: <b style={{ color: 'var(--text)' }}>{describeScope(s.scope)}</b>
           <br />

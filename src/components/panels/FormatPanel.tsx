@@ -7,8 +7,7 @@ import {
   NoteBox,
   RCol,
   RGroup,
-  ScopeSelector,
-} from '../ui';
+  } from '../ui';
 import { rectToA1 } from '../../excel/cellRef';
 import { argbToCss } from '../../excel/format';
 import { ColorLockDialog } from './ColorLockDialog';
@@ -198,10 +197,6 @@ export function FormatPanel() {
             </NoteBox>
           </div>
         </RCol>
-      </RGroup>
-
-      <RGroup title="適用先">
-        <ScopeSelector scope={s.scope} onChange={(scope) => setState({ scope })} />
       </RGroup>
 
       <RGroup title="画面表示">
