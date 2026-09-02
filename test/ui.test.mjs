@@ -10,7 +10,7 @@
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, cpSync } from 'node:fs';
 import { createServer } from 'node:http';
 import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
@@ -1285,6 +1285,172 @@ await check('違うのは起動元の案内だけ', async () => {
 // 「サーバーから開いている間に、Excel の中身が外へ出ていないか」の検証。
 // 社内データを扱う以上ここが最重要なので、受け取り側の記録で確かめる。
 // --------------------------------------------------------------------------
+// --------------------------------------------------------------------------
+// 説明動画と同じ手順を、サーバー配信版とローカル版の両方で最後まで実行し、
+// 出来上がったファイルを突き合わせる。
+// 動画は「この手順どおりにやればこうなる」という説明なので、
+// どちらか一方でしか動かない状態になったら動画が嘘になってしまう。
+// --------------------------------------------------------------------------
+console.log('\n\x1b[1m動画の手順が両方の起動方法で同じ結果になるか\x1b[0m');
+
+/**
+ * OS のフォルダー選択ダイアログの代わりに、実フォルダーを指すハンドルを渡す。
+ * 形は showDirectoryPicker が返すものと同じで、読み書きは実ファイルに対して行う。
+ * アプリ側 (loadFromDirectory / writeBackToDisk) は通常の経路をそのまま通る。
+ */
+async function attachFolderBridge(p, getRoot) {
+  await p.exposeBinding('__fsList', async (_s, rel) =>
+    readdirSync(rel ? join(getRoot(), rel) : getRoot(), { withFileTypes: true })
+      .map((d) => ({ name: d.name, kind: d.isDirectory() ? 'directory' : 'file' })),
+  );
+  await p.exposeBinding('__fsRead', async (_s, rel) => readFileSync(join(getRoot(), rel)).toString('base64'));
+  await p.exposeBinding('__fsWrite', async (_s, rel, b64) => {
+    writeFileSync(join(getRoot(), rel), Buffer.from(b64, 'base64'));
+    return true;
+  });
+  await p.exposeBinding('__fsRootName', async () => getRoot().split('/').pop());
+  await p.evaluate(() => {
+    const X = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const d64 = (b) => Uint8Array.from(atob(b), (c) => c.charCodeAt(0));
+    const e64 = (u) => {
+      let out = '';
+      for (let i = 0; i < u.length; i += 0x8000) out += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+      return btoa(out);
+    };
+    const mf = (n, r) => ({
+      kind: 'file',
+      name: n,
+      async getFile() { return new File([d64(await window.__fsRead(r))], n, { type: X }); },
+      async createWritable() {
+        const parts = [];
+        return {
+          async write(d) { parts.push(d); },
+          async close() { await window.__fsWrite(r, e64(new Uint8Array(await new Blob(parts).arrayBuffer()))); },
+        };
+      },
+    });
+    const md = (n, r) => ({
+      kind: 'directory',
+      name: n,
+      async *values() {
+        for (const it of await window.__fsList(r)) {
+          const c = r ? `${r}/${it.name}` : it.name;
+          yield it.kind === 'directory' ? md(it.name, c) : mf(it.name, c);
+        }
+      },
+      async getFileHandle(n2) { return mf(n2, r ? `${r}/${n2}` : n2); },
+    });
+    window.showDirectoryPicker = async () => md(await window.__fsRootName(), '');
+  });
+}
+
+/** 動画①の手順: 黄色以外をロック → シート保護 → 元の場所へ上書き保存 */
+async function runVideoSteps(p) {
+  await p.click('.ribbon-tab:has-text("ファイル")');
+  // 前のテストの状態を持ち越さないよう、読み込み時のロックをそろえる
+  await p.selectOption('[data-testid="initial-lock"]', 'keep');
+  await p.click('.rbtn-lg:has-text("フォルダーを開く")');
+  await waitUntil(async () => (await p.locator('.tree-file').count()) === 3, 'フォルダーを読み込めない');
+  await p.click('.ribbon-tab:has-text("書式")');
+  await p.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
+  await p.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
+  await p.click('.rbtn-lg:has-text("色から")');
+  await p.waitForSelector('.modal');
+  await waitUntil(async () => (await p.locator('.modal [data-color]').count()) > 0, '色の一覧が出ない');
+  const keys = await p.locator('.modal [data-color]').evaluateAll((els) => els.map((e) => e.getAttribute('data-color')));
+  const yellow = keys.find((k) => /FFFF00/i.test(k));
+  assert(yellow, `黄色が見つからない: ${keys.join(',')}`);
+  await p.click(`.modal [data-color="${yellow}"]`);
+  await p.locator('.modal .check:has-text("以外の") input[type="radio"]').check();
+  await p.locator('.modal .check:has-text("🔒 ロックする") input[type="radio"]').check();
+  await p.click('.modal-foot .rbtn.accent');
+  await waitUntil(async () => (await p.locator('.modal').count()) === 0, 'モーダルが閉じない');
+  await p.click('.ribbon-tab:has-text("ロック")');
+  await p.selectOption('.ribbon-panel [data-testid="scope-books"]', 'all');
+  await p.selectOption('.ribbon-panel [data-testid="scope-sheets"]', 'all');
+  await p.click('.rbtn-lg:has-text("シート保護を有効化")');
+  await waitUntil(async () => (await p.textContent('.rp-body')).includes('保護'), 'シート保護できない');
+  await p.click('.ribbon-tab:has-text("ファイル")');
+  await p.click('.rbtn-lg:has-text("元の場所へ")');
+  await p.waitForSelector('.modal');
+  await p.click('.modal-foot .rbtn.accent');
+  await waitUntil(async () => /件を上書き|新しい名前で保存/.test(await p.textContent('body')), '上書き保存できない');
+  await new Promise((r) => setTimeout(r, 1500));
+}
+
+/** 出来上がったブックの中身を、比較できる形にする (生成日時は除く) */
+async function bookParts(dir) {
+  const out = {};
+  for (const name of readdirSync(dir).sort()) {
+    const zip = await JSZip.loadAsync(readFileSync(join(dir, name)));
+    for (const part of Object.keys(zip.files).sort()) {
+      if (zip.files[part].dir || /docProps\/core\.xml$/.test(part)) continue;
+      out[`${name}::${part}`] = await zip.file(part).async('string');
+    }
+  }
+  return out;
+}
+
+const WF = join(root, '.test-build', 'wf');
+rmSync(WF, { recursive: true, force: true });
+const wfDir = (tag) => {
+  const d = join(WF, tag, 'sample');
+  mkdirSync(join(WF, tag), { recursive: true });
+  cpSync(SAMPLE, d, { recursive: true });
+  return d;
+};
+let localOut = null;
+let hostedOut = null;
+
+await check('ローカル版で、動画どおりの手順が最後まで通る', async () => {
+  const dir = wfDir('local');
+  await attachFolderBridge(page, () => dir);
+  await closeAllBooks(page);
+  await runVideoSteps(page);
+  localOut = await bookParts(join(dir, 'tokyo'));
+  assert(Object.keys(localOut).length > 0, '保存結果が読めない');
+});
+
+await check('サーバー配信版でも、同じ手順が最後まで通る', async () => {
+  const dir = wfDir('hosted');
+  await attachFolderBridge(hostedPage, () => dir);
+  await closeAllBooks(hostedPage);
+  await runVideoSteps(hostedPage);
+  hostedOut = await bookParts(join(dir, 'tokyo'));
+});
+
+await check('どちらで実行しても、出来上がるファイルが完全に一致する', async () => {
+  const names = [...new Set([...Object.keys(localOut), ...Object.keys(hostedOut)])];
+  const diff = names.filter((n) => localOut[n] !== hostedOut[n]);
+  if (diff.length) {
+    const n = diff.find((x) => /sheet1\.xml$/.test(x)) ?? diff[0];
+    const a = localOut[n] ?? '', b = hostedOut[n] ?? '';
+    let i = 0; while (i < Math.min(a.length, b.length) && a[i] === b[i]) i++;
+    console.log(`      違いの箇所 (${n}):`);
+    console.log(`        ローカル: ...${a.slice(Math.max(0, i - 90), i + 120)}`);
+    console.log(`        配信版  : ...${b.slice(Math.max(0, i - 90), i + 120)}`);
+  }
+  assert(
+    diff.length === 0,
+    `${diff.length} / ${names.length} パーツが違う: ${diff.slice(0, 3).join(', ')}`,
+  );
+  assert(names.length >= 5, `比較した部品が少なすぎる: ${names.length}`);
+});
+
+await check('保存されたファイルが、狙いどおりになっている', async () => {
+  // どちらも同じなので、片方を Excel として読んで中身を確かめる
+  const dir = join(WF, 'local', 'sample', 'tokyo');
+  const file = join(dir, readdirSync(dir)[0]);
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(readFileSync(file));
+  const ws = wb.getWorksheet('2024年度');
+  assert(ws.sheetProtection, 'シート保護がかかっていない');
+  assert(ws.getCell('C5').protection?.locked === false, '黄色のセルが入力できない');
+  assert(ws.getCell('C5').fill?.fgColor?.argb === 'FFFFFF00', '黄色が消えている');
+  assert(ws.getCell('A5').protection?.locked !== false, '費目名のロックが外れている');
+  assert(ws.getCell('D5').value?.formula === 'C5-B5', '数式が壊れている');
+});
+
 console.log('\n\x1b[1m持ち出しの検証 (受け取り側の記録で確認)\x1b[0m');
 
 await check('サーバーが受け取ったのはページ本体の 1 件だけ', () => {
