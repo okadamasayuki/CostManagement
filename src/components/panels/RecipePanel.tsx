@@ -183,6 +183,7 @@ export function RecipePanel() {
           label={<>すべて<br />実行</>}
           primary
           disabled={!ready || !stepCount}
+          title="手順書に書かれた適用先で実行します"
           onClick={() => void run()}
         />
       </RGroup>

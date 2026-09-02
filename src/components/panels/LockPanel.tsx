@@ -123,6 +123,7 @@ export function LockPanel() {
           label={<>この範囲を<br />ロック</>}
           disabled={!ready}
           title="①で決めた範囲を入力できないようにします"
+          scopeMenu
           onClick={() => void setLock(true)}
         />
         <BigButton
@@ -130,6 +131,7 @@ export function LockPanel() {
           label={<>この範囲の<br />ロック解除</>}
           disabled={!ready}
           title="①で決めた範囲だけ入力できるようにします"
+          scopeMenu
           onClick={() => void setLock(false)}
         />
         <BigButton
@@ -138,6 +140,7 @@ export function LockPanel() {
           primary
           disabled={!ready}
           title="①で決めた範囲だけを入力可能にし、それ以外をすべてロックします"
+          scopeMenu
           onClick={() => void lockAllExcept()}
         />
       </RGroup>
@@ -165,12 +168,15 @@ export function LockPanel() {
           label={<>シート保護を<br />有効化</>}
           primary
           disabled={!ready}
+          title="ロックを実際に効かせます。▾ でどのブック・シートにかけるかを選べます"
+          scopeMenu
           onClick={() => void protectSheet()}
         />
         <BigButton
           icon="🔧"
           label={<>シート保護を<br />解除</>}
           disabled={!ready}
+          scopeMenu
           onClick={() => void unprotectSheet()}
         />
         <RCol>

@@ -50,7 +50,7 @@ function assert(cond, msg) {
  */
 /** ツリーの ✕ を押して、読み込んだブックを全部閉じる */
 async function closeAllBooks(page) {
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 400; i++) {
     const n = await page.locator('.tree-file').count();
     if (n === 0) return;
     await page.locator('.tree-file .icon-btn').first().click();
@@ -894,6 +894,143 @@ await check('ZIP で保存でき、中身が更新後の Excel になってい�
   assert(operated === 1, `シート保護が保存されたブックが ${operated} 冊`);
 });
 
+console.log('\n\x1b[1mお試し用のサンプル (Excel が無くても試せるか)\x1b[0m');
+
+await check('サンプルの選択画面が出る', async () => {
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await closeAllBooks(page);
+  await page.selectOption('[data-testid="initial-lock"]', 'keep');
+  await page.click('.rbtn-lg:has-text("サンプルを作る")');
+  await page.waitForSelector('.modal:has-text("お試し用のサンプルを作る")');
+  const text = await page.textContent('.modal');
+  assert(text.includes('予算入力表'), `①が無い: ${text.slice(0, 200)}`);
+  assert(text.includes('数量報告書'), '②が無い');
+  assert(/30 ファイル/.test(text), 'ファイル数が出ていない');
+});
+
+await check('動画①と同じ 30 ファイルを、その場で作って読み込める', async () => {
+  await page.click('[data-testid="sample-budget"] .rbtn.accent');
+  await waitUntil(async () => (await page.locator('.tree-file').count()) === 30, 'サンプルが 30 件にならない', 90000);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, 'グリッドが出ない');
+  const tree = await page.textContent('.sidebar');
+  assert(/東京支店/.test(tree) && /福岡支店/.test(tree), `支店フォルダーが出ない: ${tree.slice(0, 200)}`);
+  const grid = await page.textContent('.grid-canvas');
+  assert(grid.includes('2025年度 予算入力表'), `中身が違う: ${grid.slice(0, 200)}`);
+});
+
+await check('サンプルにも黄色い入力欄があり、色からロックが使える', async () => {
+  await page.click('.ribbon-tab:has-text("書式")');
+  await page.selectOption('[data-testid="scope-books"]', 'all');
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
+  await page.click('.rbtn-lg:has-text("色から")');
+  await page.waitForSelector('.modal');
+  await waitUntil(async () => (await page.locator('.modal [data-color]').count()) > 0, '色の一覧が出ない', 90000);
+  const keys = await page.locator('.modal [data-color]').evaluateAll((els) =>
+    els.map((e) => e.getAttribute('data-color')),
+  );
+  assert(keys.some((k) => /FFFF00/i.test(k)), `黄色が見つからない: ${keys.join(', ')}`);
+  await page.click('.modal-foot .rbtn:has-text("キャンセル")');
+  await waitUntil(async () => (await page.locator('.modal').count()) === 0, '閉じない');
+});
+
+await check('動画②のサンプルは、ロック済み・保護済みの状態で作られる', async () => {
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  await closeAllBooks(page);
+  await page.click('.rbtn-lg:has-text("サンプルを作る")');
+  await page.waitForSelector('.modal');
+  await page.click('[data-testid="sample-report"] .rbtn.accent');
+  await waitUntil(async () => (await page.locator('.tree-file').count()) === 30, 'サンプルが 30 件にならない', 90000);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, 'グリッドが出ない');
+  await waitUntil(
+    async () => (await page.textContent('.statusbar')).includes('保護あり'),
+    'シート保護がかかっていない',
+  );
+  const grid = await page.textContent('.grid-canvas');
+  assert(grid.includes('2025年度 数量報告書'), `中身が違う: ${grid.slice(0, 200)}`);
+  assert(grid.includes('2,031'), '年と紛らわしい数量が入っていない');
+});
+
+await check('サンプルでも年度更新がひととおり動く', async () => {
+  await page.click('.ribbon-tab:has-text("年度更新")');
+  await page.selectOption('[data-testid="scope-books"]', 'all');
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
+  await page.click('.rbtn-lg:has-text("年を")');
+  await waitUntil(
+    async () => (await page.textContent('.grid-canvas')).includes('2026年度'),
+    '年度が進まない',
+    90000,
+  );
+  const grid = await page.textContent('.grid-canvas');
+  assert(grid.includes('2,031'), '数量まで書き換わっている');
+});
+
+await check('お試し用なので「元の場所へ上書き保存」は選べない', async () => {
+  await page.click('.ribbon-tab:has-text("ファイル")');
+  const disabled = await page
+    .locator('.rbtn-lg:has-text("元の場所へ")')
+    .evaluate((el) => el.disabled);
+  assert(disabled, 'パソコン上に無いファイルなのに上書き保存が押せる');
+  // 後片付け
+  await closeAllBooks(page);
+  await page.setInputFiles('input[webkitdirectory]', SAMPLE);
+  await waitUntil(async () => (await page.locator('.cell').count()) > 0, '読み込み直せない');
+});
+
+console.log('\n\x1b[1mボタンごとの適用先 (▾)\x1b[0m');
+
+await check('操作ボタンに ▾ が付いていて、対象をその場で選べる', async () => {
+  await page.click('.ribbon-tab:has-text("ロック")');
+  const carets = await page.locator('.ribbon-panel [data-testid="scope-caret"]').count();
+  assert(carets >= 4, `ロックタブの ▾ が ${carets} 個`);
+  await page.locator('.rbtn-split:has(.rbtn-lg:has-text("シート保護を")) [data-testid="scope-caret"]').first().click();
+  await page.waitForSelector('[data-testid="scope-menu"]');
+  const items = await page.locator('[data-testid="scope-menu"] .scope-menu-item').allTextContents();
+  assert(items.length === 4, `選べる対象が ${items.length} 件`);
+  assert(items.some((t) => t.includes('表示中のシートだけ')), `内容: ${items.join(' | ')}`);
+  assert(items.some((t) => t.includes('読み込んだ全ブックの全シート')), `内容: ${items.join(' | ')}`);
+  // 押す前に、それぞれ何ブック / 何シートに当たるかが出る
+  assert(items.some((t) => /\d+ ブック \/ \d+ シート/.test(t)), `件数が出ていない: ${items.join(' | ')}`);
+});
+
+await check('▾ から選ぶと、その対象ですぐ実行される', async () => {
+  await page.click('[data-testid="scope-menu"] .scope-menu-item:has-text("読み込んだ全ブックの全シート")');
+  await waitUntil(
+    async () => (await page.locator('[data-testid="scope-menu"]').count()) === 0,
+    'メニューが閉じない',
+  );
+  await waitUntil(
+    async () => /シート/.test(await page.locator('.toast').last().textContent()),
+    'その場で実行されない',
+  );
+  // 適用先バーの表示も、いま選んだものに合っている
+  assert(
+    (await page.inputValue('[data-testid="scope-books"]')) === 'all',
+    '適用先バーが選んだ対象に合っていない',
+  );
+  assert((await page.inputValue('[data-testid="scope-sheets"]')) === 'all', '同上 (シート)');
+  const bar = await page.textContent('[data-testid="scope-bar"]');
+  assert(/ブック/.test(bar), `適用先バー: ${bar}`);
+});
+
+await check('モーダルの中でも適用先をその場で変えられる', async () => {
+  await page.click('.ribbon-tab:has-text("書式")');
+  await page.click('.rbtn-lg:has-text("条件を指定して")');
+  await page.waitForSelector('.modal');
+  assert(
+    (await page.locator('.modal [data-testid="dialog-scope"] [data-testid="scope-books"]').count()) === 1,
+    'モーダルの中に適用先の指定がない',
+  );
+  await page.selectOption('.modal [data-testid="dialog-scope"] [data-testid="scope-books"]', 'current');
+  await waitUntil(
+    async () => (await page.inputValue('[data-testid="scope-books"]')) === 'current',
+    'モーダルでの変更が反映されない',
+  );
+  await page.click('.modal-foot .rbtn:has-text("キャンセル")');
+  await waitUntil(async () => (await page.locator('.modal').count()) === 0, '閉じない');
+  await page.selectOption('[data-testid="scope-books"]', 'all');
+  await page.selectOption('[data-testid="scope-sheets"]', 'all');
+});
+
 console.log('\n\x1b[1m年に見える数字を取り違えないか\x1b[0m');
 
 await check('数量など「年に見える数字だけのセル」は既定で守られる', async () => {
@@ -1067,8 +1204,13 @@ await check('保存したツールに、読み込んだ Excel の中身が混ざ
     /^<body[^>]*>\s*<div id="root"><\/div>\s*<\/body>\s*<\/html>\s*$/.test(body),
     `保存したファイルの中身が空でない: ${body.slice(0, 300)}`,
   );
-  // 念のため、サンプルにしか出てこない文字列でも確認する
-  for (const word of ['原価管理表', '材料費', '費目', '1,000,000']) {
+  /**
+   * 念のため、読み込んだファイルにしか出てこない文字列でも確認する。
+   * 「材料費」のような一般的な語は、ツール自身が持つ
+   * お試し用サンプルの中にも出てくるので使えない。
+   * ここでは test/make-fixtures.ts のサンプル固有の語だけを使う。
+   */
+  for (const word of ['原価管理表', '単価改定を反映', '1,000,000', '2,200,000']) {
     assert(!html.includes(word), `保存したファイルに「${word}」が残っている`);
   }
 });

@@ -95,6 +95,30 @@ export async function loadFromFiles(
 }
 
 /**
+ * ツール内で作ったサンプルを読み込む。
+ * 実ファイルではないので保存先のハンドルは持たない
+ * (「元の場所へ上書き保存」はできず、ZIP で保存する形になる)。
+ */
+export async function loadGenerated(
+  items: Array<{ relPath: string; fileName: string; data: ArrayBuffer }>,
+  onProgress?: (p: LoadProgress) => void,
+): Promise<LoadResult> {
+  const books: LoadedWorkbook[] = [];
+  let done = 0;
+  for (const it of items) {
+    onProgress?.({ done, total: items.length, current: it.relPath });
+    const file = new File([it.data], it.fileName, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    books.push(await parseOne(file, it.relPath));
+    done++;
+    await yieldToUi();
+  }
+  onProgress?.({ done, total: items.length, current: '' });
+  return { books, skipped: [] };
+}
+
+/**
  * File System Access API のディレクトリハンドルから再帰的に読み込む。
  * ファイルハンドルを保持するので、同じ場所へ上書き保存できる。
  */

@@ -206,6 +206,87 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .rbtn-lg:disabled { opacity: 0.4; cursor: default; }
 .rbtn-lg.primary { background: #e5f0ea; border-color: #b8d5c6; font-weight: 600; }
 
+/* 分割ボタン (本体 + 適用先を選ぶ ▾) */
+.rbtn-split { display: inline-flex; align-items: stretch; position: relative; }
+.rbtn-lg.split { width: 80px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.rbtn-caret {
+  width: 16px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 1px solid #cfe0d6;
+  border-top-right-radius: 3px;
+  border-bottom-right-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.rbtn-caret:hover:not(:disabled) { background: #e5f0ea; border-color: #c5ddd0; }
+.rbtn-caret:disabled { opacity: 0.4; cursor: default; }
+.rbtn-split:has(.rbtn-lg.primary) .rbtn-caret { background: #e5f0ea; border-color: #b8d5c6; }
+
+.scope-menu {
+  position: fixed;
+  z-index: 300;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  text-align: left;
+}
+.scope-menu-head {
+  padding: 4px 8px 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3px;
+}
+.scope-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11.5px;
+  text-align: left;
+  color: var(--text);
+}
+.scope-menu-item:hover:not(:disabled) { background: #e5f0ea; }
+.scope-menu-item:disabled { opacity: 0.45; cursor: default; }
+.scope-menu-item > span:first-child { flex: 1; }
+.scope-menu-count { font-size: 10.5px; color: var(--text-dim); white-space: nowrap; }
+.scope-menu-note {
+  margin-top: 4px;
+  padding: 5px 8px 3px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* モーダル内の適用先の行 */
+.scope-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  background: #eef6f1;
+  border: 1px solid #c5ddd0;
+  border-left: 3px solid var(--excel-green);
+  border-radius: 3px;
+  font-size: 11.5px;
+}
+.scope-row .sr-label { font-weight: 700; white-space: nowrap; }
+.scope-row .sr-count { color: var(--text-dim); white-space: nowrap; }
+
 /* リボンの小さいボタン */
 .rbtn {
   display: inline-flex;

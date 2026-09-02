@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Btn, Check, Modal, NoteBox } from '../ui';
+import { Btn, Check, Modal, NoteBox, ScopeRow } from '../ui';
 import { collectUsedColors, type UsedColor } from '../../excel/ops';
 import { argbToCss, readableTextColor } from '../../excel/format';
 import type { StepBody } from '../../recipe/types';
@@ -29,7 +29,6 @@ export function ColorLockDialog(props: { onClose(): void }) {
   const [locked, setLocked] = useState(true);
   const [includeUnfilled, setIncludeUnfilled] = useState(true);
   const [alsoSetMatched, setAlsoSetMatched] = useState(true);
-  const scopeNow = getState().scope;
 
   const scope = store.scope;
 
@@ -95,6 +94,7 @@ export function ColorLockDialog(props: { onClose(): void }) {
         </>
       }
     >
+      <ScopeRow />
       <div
         style={{
           display: 'flex',
@@ -106,18 +106,12 @@ export function ColorLockDialog(props: { onClose(): void }) {
           padding: '8px 10px',
         }}
       >
-        <div style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-          🎯 適用先:{' '}
-          <b style={{ color: 'var(--excel-green)' }} data-testid="dialog-scope">
-            {describeScope(scopeNow)}
-          </b>
-        </div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          対象: <b style={{ color: 'var(--text)' }}>{describeScope(scope)}</b>
+          いま数えている対象: <b style={{ color: 'var(--text)' }}>{describeScope(scope)}</b>
           <br />
           範囲は各シートのデータが入っている範囲全体です。
           <br />
-          適用先を変えると、色の一覧も数え直します。
+          上の「適用先」を変えると、色の一覧も数え直します。
         </div>
       </div>
 
@@ -131,7 +125,7 @@ export function ColorLockDialog(props: { onClose(): void }) {
       {colors && colors.length === 0 && (
         <NoteBox kind="warn">
           対象の範囲に塗りつぶされたセルが見つかりませんでした。
-          リボンの「適用先」で対象のブック / シートを広げてみてください。
+上の「適用先」で対象のブック / シートを広げてみてください。
         </NoteBox>
       )}
 

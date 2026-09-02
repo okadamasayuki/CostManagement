@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Btn, Check, ColorSwatches, Field, Modal, NoteBox } from '../ui';
+import { Btn, Check, ColorSwatches, Field, Modal, NoteBox, ScopeRow } from '../ui';
 import type { CellCondition, ConditionAction, StepBody } from '../../recipe/types';
 import { DEFAULT_CONDITION } from '../../recipe/types';
-import { describeCondition, describeScope } from '../../recipe/describe';
-import { getState, runOperation, toast, useStore } from '../../state/store';
+import { describeCondition } from '../../recipe/describe';
+import { runOperation, toast } from '../../state/store';
 
 /**
  * 条件を指定してセルを塗る / ロックする画面。
@@ -13,13 +13,11 @@ import { getState, runOperation, toast, useStore } from '../../state/store';
  * 200 ファイルのような数を手で塗るのは現実的でないため。
  */
 export function ConditionDialog(props: { onClose(): void }) {
-  const s = useStore();
   const [condition, setCondition] = useState<CellCondition>(DEFAULT_CONDITION);
   const [useNumber, setUseNumber] = useState(false);
   const [useText, setUseText] = useState(false);
   const [action, setAction] = useState<'fill' | 'lock' | 'unlock'>('fill');
   const [color, setColor] = useState<string | null>('FFFFF2CC');
-  const scopeNow = getState().scope;
 
   const patch = (p: Partial<CellCondition>) => {
     setCondition({ ...condition, ...p });
@@ -67,6 +65,7 @@ export function ConditionDialog(props: { onClose(): void }) {
         </>
       }
     >
+      <ScopeRow />
       <div
         style={{
           display: 'flex',
@@ -78,16 +77,10 @@ export function ConditionDialog(props: { onClose(): void }) {
           padding: '8px 10px',
         }}
       >
-        <div style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-          🎯 適用先:{' '}
-          <b style={{ color: 'var(--excel-green)' }} data-testid="dialog-scope">
-            {describeScope(scopeNow)}
-          </b>
-        </div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          対象: <b style={{ color: 'var(--text)' }}>{describeScope(s.scope)}</b>
+          範囲は各シートの<b>データが入っている範囲全体</b>です。
           <br />
-          範囲は各シートのデータが入っている範囲全体です。
+          どのブック・シートに効かせるかは、上の「適用先」で変えられます。
         </div>
       </div>
 

@@ -107,7 +107,8 @@ export function YearPanel() {
           }
           primary
           disabled={!ready}
-          title="見つかった年をまとめて書き換えます"
+          title="見つかった年をまとめて書き換えます。▾ でどのブック・シートに効かせるかを選べます"
+          scopeMenu
           onClick={() => void doApply()}
         />
         <RCol>

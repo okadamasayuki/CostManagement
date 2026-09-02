@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { Btn, Check, ColorSwatches, Modal, NoteBox } from '../ui';
 import type { DetectReport } from '../../excel/ops';
 import type { StepBody } from '../../recipe/types';
-import { describeScope } from '../../recipe/describe';
-import { getState, previewOperation, runOperation, setState, toast, useStore } from '../../state/store';
+import { getState, previewOperation, runOperation, setState, toast } from '../../state/store';
 
 /**
  * 2 年分のファイルを見比べて、記入欄を自動で見つける画面。
@@ -15,14 +14,12 @@ import { getState, previewOperation, runOperation, setState, toast, useStore } f
  * という当たりが機械的に付けられる。それを一気に色分け / ロックする。
  */
 export function DetectInputDialog(props: { onClose(): void }) {
-  const s = useStore();
   const [ignoreYearOnly, setIgnoreYearOnly] = useState(true);
   const [compareFormulaText, setCompareFormulaText] = useState(true);
   const [doFill, setDoFill] = useState(true);
   const [color, setColor] = useState<string | null>('FFFFF2CC');
   const [unlockChanged, setUnlockChanged] = useState(true);
   const [lockUnchanged, setLockUnchanged] = useState(true);
-  const scopeNow = getState().scope;
   const [preview, setPreview] = useState<{ summary: string; detect?: DetectReport } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -133,15 +130,7 @@ export function DetectInputDialog(props: { onClose(): void }) {
           marginTop: 10,
         }}
       >
-        <div style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-          🎯 適用先:{' '}
-          <b style={{ color: 'var(--excel-green)' }} data-testid="dialog-scope">
-            {describeScope(scopeNow)}
-          </b>
-        </div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.6 }}>
-          対象: <b style={{ color: 'var(--text)' }}>{describeScope(s.scope)}</b>
-          <br />
           2 年分のフォルダーが<b>両方入るように</b>指定してください。
           <br />
           ファイル名やフォルダー名の<b>年の数字だけが違うもの</b>を組にします。

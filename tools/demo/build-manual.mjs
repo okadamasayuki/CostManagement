@@ -16,6 +16,13 @@ const ROOT = process.env.REPO_ROOT ?? process.cwd();
 const OUT = process.argv[2] ?? join(ROOT, '_site', 'manual-offline.html');
 const VIDEOS = join(ROOT, 'docs', 'videos');
 
+/** 動画の前に置く案内 */
+const intro =
+  '<b>まず自分の手で触ってみたいときは、</b>ツールの「ファイル」タブにある' +
+  '<b>「お試し用のサンプルを作る」</b>を押してください。この説明書の動画で使っているのと' +
+  '<b>同じ 30 ファイル</b>をその場で作って読み込みます。' +
+  'Excel が入っていない端末 (Mac など) でも、会社のファイルを持ち出さずに操作を試せます。';
+
 const items = [
   {
     id: 'v1',
@@ -115,6 +122,7 @@ const html = `<!doctype html>
       <div class="lead">
         <p><b>実際のツールを操作した画面をそのまま録画したもの</b>です。作り物の画面ではありません。説明の字幕だけを重ねています。</p>
         <p>どちらも、共有フォルダーにある <b>30 個の Excel</b> を対象にしています。ファイル数が何個でも操作は同じです。</p>
+        <p>${intro}</p>
       </div>
 ${blocks
   .map(

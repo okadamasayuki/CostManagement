@@ -33,7 +33,7 @@ export function ScopeBar() {
         )}
       </span>
       <span className="sb-note">
-        ロック・書式・年度更新など<b>すべての操作</b>で使われます
+        ボタン横の <b>▾</b> からも、その操作の対象をその場で選べます
       </span>
     </div>
   );

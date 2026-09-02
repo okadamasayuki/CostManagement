@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { BigButton, Btn, Check, Field, Modal, NoteBox, RCol, RGroup } from '../ui';
-import { loadFromDirectory, loadFromFiles, isMacroFormat } from '../../excel/loader';
+import { loadFromDirectory, loadFromFiles, loadGenerated, isMacroFormat } from '../../excel/loader';
+import { SAMPLES, buildSample, type SampleKind } from '../../excel/samples';
 import { supportsDirectoryPicker } from '../../excel/fsTypes';
 import { applyRename, downloadBlob, saveAllAsZip, saveOne, writeBackToDisk } from '../../excel/saver';
 import { OFFLINE_FILE_NAME, getSelfCopy, isHosted } from '../../security/selfCopy';
@@ -21,6 +22,7 @@ export function FilePanel() {
   const fileInput = useRef<HTMLInputElement>(null);
   const dirInput = useRef<HTMLInputElement>(null);
   const [confirmSave, setConfirmSave] = useState<null | 'zip' | 'disk'>(null);
+  const [showSample, setShowSample] = useState(false);
 
   const book = currentBook();
   const hasBooks = s.books.length > 0;
@@ -38,6 +40,34 @@ export function FilePanel() {
       finishLoad(result.books.length, result.skipped.length, result.books.filter((b) => b.loadError).length);
       addBooks(result.books, result.skipped);
       await applyInitialLock();
+    } finally {
+      clearBusy();
+    }
+  }
+
+  /**
+   * お試し用のサンプルを作って、そのまま読み込む。
+   * Excel が入っていない端末でも操作感を確かめられるようにするためのもの。
+   */
+  async function loadSample(kind: SampleKind) {
+    const info = SAMPLES.find((x) => x.kind === kind);
+    setShowSample(false);
+    setBusy('サンプルを作っています…', 0, info?.files ?? 30);
+    try {
+      const files = await buildSample(kind, (done, total) =>
+        setBusy(`サンプルを作っています… (${done}/${total})`, done, total),
+      );
+      const result = await loadGenerated(files, (p) =>
+        setBusy(`読み込んでいます… (${p.done}/${p.total})`, p.done, p.total),
+      );
+      addBooks(result.books, []);
+      toast(
+        'success',
+        `お試し用のサンプルを ${result.books.length} ファイル作りました`,
+        `${info?.summary ?? ''}\n※ お試し用なので「元の場所へ上書き保存」はできません。結果を残すときは「ZIP で保存」を使ってください。`,
+      );
+    } catch (e) {
+      toast('error', 'サンプルを作れませんでした', e instanceof Error ? e.message : String(e));
     } finally {
       clearBusy();
     }
@@ -234,6 +264,19 @@ export function FilePanel() {
             supportsDirectoryPicker() ? void handleDirectoryPicker() : dirInput.current?.click()
           }
         />
+        <BigButton
+          icon="🧪"
+          label={<>お試し用の<br />サンプルを作る</>}
+          title="動画と同じ 30 ファイルをその場で作ります。Excel が入っていない端末でも操作を試せます"
+          onClick={() => setShowSample(true)}
+        />
+        <div style={{ width: 176 }}>
+          <NoteBox>
+            <b>Excel が無くても試せます。</b>
+            「お試し用のサンプルを作る」で、説明動画と<b>同じ 30 ファイル</b>を
+            その場で作って読み込みます。通信は発生しません。
+          </NoteBox>
+        </div>
       </RGroup>
 
       <RGroup title="読み込み時のロック">
@@ -338,6 +381,66 @@ export function FilePanel() {
           </div>
         </RCol>
       </RGroup>
+
+      {showSample && (
+        <Modal
+          title="お試し用のサンプルを作る"
+          wide
+          onClose={() => setShowSample(false)}
+          footer={<Btn onClick={() => setShowSample(false)}>閉じる</Btn>}
+        >
+          <NoteBox kind="ok">
+            <b>Excel が入っていない端末でも、操作をひととおり試せます。</b>
+            説明動画で使っているのと<b>同じ 30 ファイル</b>を、このツールの中で作って読み込みます。
+            外部から取ってくるものは何もありません。
+          </NoteBox>
+
+          {SAMPLES.map((info) => (
+            <div
+              key={info.kind}
+              data-testid={`sample-${info.kind}`}
+              style={{
+                display: 'flex',
+                gap: 14,
+                alignItems: 'flex-start',
+                border: '1px solid var(--border)',
+                borderRadius: 4,
+                padding: '10px 12px',
+                marginTop: 12,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>{info.title}</div>
+                <div style={{ color: 'var(--text-dim)', marginBottom: 6 }}>
+                  {info.rootFolder}/ …（{info.files} ファイル）
+                  <br />
+                  {info.summary}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+                  {info.points.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              </div>
+              <Btn
+                kind="accent"
+                onClick={() => void loadSample(info.kind)}
+                title="作って、そのまま読み込みます"
+              >
+                作って読み込む
+              </Btn>
+            </div>
+          ))}
+
+          <NoteBox kind="warn">
+            お試し用のファイルは<b>パソコンの中には作られません</b>（このツールの中だけにあります）。
+            そのため「元の場所へ上書き保存」は使えません。
+            結果を Excel で開いて確かめたいときは、<b>「ZIP で保存」</b>で取り出してください。
+            <br />
+            すでにファイルを読み込んでいる場合は、そこに<b>追加</b>で読み込まれます。
+          </NoteBox>
+        </Modal>
+      )}
 
       {confirmSave && (
         <Modal

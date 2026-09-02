@@ -212,6 +212,13 @@ function AboutModal({ onClose }: { onClose(): void }) {
         LAN を切断した状態でもすべての機能が動作します。
       </NoteBox>
 
+      <NoteBox>
+        <b>Excel が入っていない端末でも試せます。</b>
+        「ファイル」タブの<b>「お試し用のサンプルを作る」</b>で、説明動画と同じ
+        <b>30 ファイル</b>をその場で作って読み込めます。会社のファイルを持ち出さずに、
+        操作をひととおり確かめられます。
+      </NoteBox>
+
       <h3 style={{ margin: '18px 0 6px' }}>できること</h3>
       <table className="plain">
         <tbody>
@@ -264,7 +271,10 @@ function AboutModal({ onClose }: { onClose(): void }) {
       <h3 style={{ margin: '18px 0 6px' }}>基本の流れ</h3>
       <ol style={{ paddingLeft: 20, margin: 0 }}>
         <li>「ファイル」タブ →「フォルダーを開く」</li>
-        <li>画面上の「適用先」を<b>全ブック・全シート</b>にする（1 回の操作が全部にかかります）</li>
+        <li>
+          画面上の「適用先」を<b>全ブック・全シート</b>にする（1 回の操作が全部にかかります）。
+          各ボタンの横の <b>▾</b> からも、その操作の対象をその場で選べます
+        </li>
         <li>
           「書式・色」タブ →「色からロックを設定」で、入力欄の色を選んで
           <b>その色だけ入力できるようにする</b>

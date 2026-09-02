@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { OpScope } from '../excel/types';
+import { countTargets } from '../excel/ops';
 import { listFolders } from '../excel/folders';
 import { describeScope, describeScopeShort } from '../recipe/describe';
-import { useStore } from '../state/store';
+import { opContext, setState, useStore } from '../state/store';
 import type { RangeSpec } from '../recipe/types';
 import { argbToCss, cssToArgb } from '../excel/format';
 
@@ -27,10 +28,18 @@ export function BigButton(props: {
   disabled?: boolean;
   primary?: boolean;
   title?: string;
+  /**
+   * ボタンの右に ▾ を付け、「この操作をどこに効かせるか」をその場で選べるようにする。
+   * 選ぶと適用先がそれに変わり、そのまま実行する。
+   * (Excel の分割ボタンと同じ感覚。適用先を別の場所で設定してから戻る、をなくす)
+   */
+  scopeMenu?: boolean;
+  /** ▾ から選んだときの実行。省略時は onClick を使う */
+  onScopedClick?(): void;
 }) {
-  return (
+  const btn = (
     <button
-      className={`rbtn-lg${props.primary ? ' primary' : ''}`}
+      className={`rbtn-lg${props.primary ? ' primary' : ''}${props.scopeMenu ? ' split' : ''}`}
       onClick={props.onClick}
       disabled={props.disabled}
       title={props.title}
@@ -41,6 +50,119 @@ export function BigButton(props: {
       </span>
       <span>{props.label}</span>
     </button>
+  );
+  if (!props.scopeMenu) return btn;
+  return (
+    <span className="rbtn-split">
+      {btn}
+      <ScopeMenuButton
+        disabled={props.disabled}
+        onPick={() => (props.onScopedClick ?? props.onClick)()}
+      />
+    </span>
+  );
+}
+
+/** 「この操作の適用先」をその場で選ぶ ▾ */
+function ScopeMenuButton(props: { disabled?: boolean; onPick(): void }) {
+  const [open, setOpen] = useState(false);
+  // リボンは高さが決まっていて、はみ出した分は隠れる。
+  // メニューが切れないよう、画面に対する固定位置で出す。
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const store = useStore();
+  const boxRef = useRef<HTMLSpanElement>(null);
+  const caretRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+
+  const choices: Array<{ key: string; label: string; scope: OpScope }> = [
+    { key: 'sheet', label: '表示中のシートだけ', scope: { books: 'current', sheets: 'current' } },
+    { key: 'book', label: 'このブックの全シート', scope: { books: 'current', sheets: 'all' } },
+    { key: 'all', label: '読み込んだ全ブックの全シート', scope: { books: 'all', sheets: 'all' } },
+    {
+      key: 'selected',
+      label: `一覧で選んだブック (${store.selectedBookIds.length}) の全シート`,
+      scope: { books: 'selected', sheets: 'all' },
+    },
+  ];
+
+  function pick(scope: OpScope) {
+    setOpen(false);
+    setState({ scope });
+    // 状態の反映を待ってから実行する
+    setTimeout(() => props.onPick(), 0);
+  }
+
+  const MENU_W = 276;
+  function toggle() {
+    const r = caretRef.current?.getBoundingClientRect();
+    if (r) {
+      setPos({
+        top: Math.round(r.bottom + 2),
+        left: Math.round(Math.max(8, Math.min(r.right - MENU_W, window.innerWidth - MENU_W - 8))),
+      });
+    }
+    setOpen((v) => !v);
+  }
+
+  return (
+    <span className="rbtn-split-menu" ref={boxRef}>
+      <button
+        type="button"
+        ref={caretRef}
+        className="rbtn-caret"
+        title="この操作をどこに効かせるかを選ぶ"
+        data-testid="scope-caret"
+        disabled={props.disabled}
+        onClick={toggle}
+      >
+        ▾
+      </button>
+      {open && (
+        <div
+          className="scope-menu"
+          data-testid="scope-menu"
+          style={{ top: pos.top, left: pos.left, width: MENU_W }}
+        >
+          <div className="scope-menu-head">この操作を…</div>
+          {choices.map((c) => {
+            const n = countTargets(opContext(), c.scope);
+            const empty = n.sheets === 0;
+            return (
+              <button
+                key={c.key}
+                type="button"
+                className="scope-menu-item"
+                disabled={empty}
+                onClick={() => pick(c.scope)}
+              >
+                <span>{c.label}</span>
+                <span className="scope-menu-count">
+                  {empty ? '対象なし' : `${n.books} ブック / ${n.sheets} シート`}
+                </span>
+              </button>
+            );
+          })}
+          <div className="scope-menu-note">
+            選ぶとその場で実行します。上の「適用先」もこれに変わります。
+            <br />
+            細かい指定 (フォルダー・ファイル名) は「適用先」から行えます。
+          </div>
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -260,6 +382,30 @@ export function ScopeBadge(props: { note?: string }) {
       <span>🎯 適用先</span>
       <b>{describeScopeShort(s.scope)}</b>
       {props.note && <span className="note">{props.note}</span>}
+    </div>
+  );
+}
+
+/**
+ * モーダルの中で「この操作をどこに効かせるか」をその場で決める行。
+ * ダイアログを閉じて適用先を直しに行く、という往復をなくすために置く。
+ */
+export function ScopeRow() {
+  const s = useStore();
+  const n = countTargets(opContext(), s.scope);
+  return (
+    <div className="scope-row" data-testid="dialog-scope">
+      <span className="sr-label">🎯 この操作の適用先</span>
+      <ScopeSelector scope={s.scope} onChange={(scope) => setState({ scope })} inline />
+      <span className="sr-count" title={describeScope(s.scope)}>
+        {s.books.length ? (
+          <>
+            <b>{n.books}</b> ブック / <b>{n.sheets}</b> シート
+          </>
+        ) : (
+          'ファイル未読み込み'
+        )}
+      </span>
     </div>
   );
 }
