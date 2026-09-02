@@ -152,7 +152,8 @@ function buildGuardTooltip(all: BlockedAttempt[], sends: BlockedAttempt[]): stri
   const resources = all.filter((b) => b.kind === 'resource');
   if (resources.length) {
     lines.push(`※ 外部リソースの読み込みを ${resources.length} 件止めました`);
-    lines.push('  (データの送信ではありません。ブラウザーや拡張機能によるものです)');
+    lines.push('  (ブラウザーや拡張機能によるものがほとんどです。');
+    lines.push('   いずれも遮断済みで、外部には何も出ていません)');
     lines.push(...resources.slice(-3).map(describeAttempt));
   }
   return lines.join('\n');

