@@ -88,6 +88,17 @@ async function waitUntil(fn, msg, timeout = 20000) {
   }
 }
 
+/**
+ * ブラウザーを起動する前に UTF-8 のロケールを保証する。
+ *
+ * ロケールが POSIX のままだと Chromium が download 属性の日本語ファイル名を
+ * 落とし、拡張子ごと "download" になってしまう。実機 (Windows / macOS) では
+ * 起きないが、そのままだと「保存したファイル名」を検証できない。
+ * ダブルクリックで開ける .html として保存されることは、共有フォルダー運用の
+ * 前提なので、ここを確かめられるようにしておく。
+ */
+if (!process.env.LC_ALL && !process.env.LANG) process.env.LC_ALL = 'C.UTF-8';
+
 const requests = [];
 const consoleErrors = [];
 
@@ -892,35 +903,57 @@ await page.screenshot({ path: join(SHOTS, '05b-detect.png') });
 
 console.log('\n\x1b[1mオフライン利用 (ツール本体の保存)\x1b[0m');
 
-await check('ツール本体を保存でき、それ単体で動く', async () => {
+// 共有フォルダーを模したパス (日本語・空白・入れ子)。
+// 社内の共有フォルダーはこういう名前になることが多いため、そのまま試す。
+const SHARE = join(root, '.test-build', '社内共有', '原価管理 共通', '01 ツール');
+let sharedToolPath = null;
+
+await check('ツール本体をダブルクリックできる .html として保存できる', async () => {
   await page.click('.ribbon-tab:has-text("ファイル")');
   const before = requests.length;
   const dl = page.waitForEvent('download', { timeout: 15000 });
   await page.click('.rbtn-lg:has-text("ツール本体を")');
   const download = await dl;
-  const savedPath = join(root, '.test-build', 'self-copy.html');
-  await download.saveAs(savedPath);
+
+  const name = download.suggestedFilename();
+  assert(name.endsWith('.html'), `保存名に .html が付かない: ${name}`);
+
+  mkdirSync(SHARE, { recursive: true });
+  sharedToolPath = join(SHARE, name);
+  await download.saveAs(sharedToolPath);
 
   // 保存自体がメモリー上の DOM から作られ、通信を伴わないこと
   assert(requests.length === before, 'ツール保存で通信が発生している');
 
-  const html = readFileSync(savedPath, 'utf8');
+  const html = readFileSync(sharedToolPath, 'utf8');
   assert(html.startsWith('<!doctype html>'), 'DOCTYPE がない');
   assert(html.includes("connect-src 'none'"), 'CSP が失われている');
+  // 外部から読み込む資源が 1 つも無いこと (共有フォルダーでは取りに行けない)
+  assert(!/<script[^>]+src=/i.test(html), '外部スクリプトの読み込みが残っている');
+  assert(!/<link[^>]+href="http/i.test(html), '外部スタイルの読み込みが残っている');
+});
 
-  // 保存したファイルを別のページとして開き、実際に動くか確かめる
-  const fresh = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+await check('共有フォルダーから、通信できない状態でも単体で動く', async () => {
+  // ネットワークを完全に遮断した状態で開く。
+  // 社内で LAN から切り離しても動くことの確認。
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await ctx.setOffline(true);
+  const fresh = await ctx.newPage();
   const freshRequests = [];
   fresh.on('request', (r) => {
     if (!r.url().startsWith('file://')) freshRequests.push(r.url());
   });
   const freshErrors = [];
   fresh.on('pageerror', (e) => freshErrors.push(e.message));
-  await fresh.goto(`file://${savedPath}`);
+
+  await fresh.goto(`file://${sharedToolPath}`);
   await fresh.waitForSelector('.app', { timeout: 15000 });
 
   // 保存直後の状態 (ファイル未読み込み) で開けること
   assert(await fresh.isVisible('.grid-placeholder'), '保存したファイルが初期状態で開かない');
+  // ローカル起動として認識され、赤い警告が出ないこと
+  const badge = await fresh.textContent('[data-testid="guard-badge"]');
+  assert(badge.includes('完全オフライン'), `タイトルバー: ${badge}`);
 
   // 保存したファイルでも Excel が読めること
   await fresh.setInputFiles('input[webkitdirectory]', SAMPLE);
@@ -929,7 +962,7 @@ await check('ツール本体を保存でき、それ単体で動く', async () =
   assert(text.includes('原価管理表'), '保存したファイルで Excel を読み込めない');
   assert(freshErrors.length === 0, `保存したファイルで JS エラー: ${freshErrors[0]}`);
   assert(freshRequests.length === 0, `保存したファイルが通信している: ${freshRequests[0]}`);
-  await fresh.close();
+  await ctx.close();
 });
 
 console.log('\n\x1b[1m外部通信の遮断\x1b[0m');
