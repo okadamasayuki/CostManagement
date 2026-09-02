@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync, cpSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { execFileSync } from 'node:child_process';
 import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
 
@@ -1449,6 +1450,68 @@ await check('保存されたファイルが、狙いどおりになっている'
   assert(ws.getCell('C5').fill?.fgColor?.argb === 'FFFFFF00', '黄色が消えている');
   assert(ws.getCell('A5').protection?.locked !== false, '費目名のロックが外れている');
   assert(ws.getCell('D5').value?.formula === 'C5-B5', '数式が壊れている');
+});
+
+// --------------------------------------------------------------------------
+// 共有フォルダーへ持ち出す「動画つき説明書」(1 ファイル)。
+// ネットワークが無い場所で再生できないと意味がないので、そこを確かめる。
+// --------------------------------------------------------------------------
+console.log('\n\x1b[1m動画つき説明書 (共有フォルダー用の 1 ファイル)\x1b[0m');
+
+const MANUAL = join(root, '.test-build', '操作説明.html');
+
+await check('1 ファイルの説明書を作れる', () => {
+  execFileSync('node', [join(root, 'tools', 'demo', 'build-manual.mjs'), MANUAL], { encoding: 'utf8' });
+  const html = readFileSync(MANUAL, 'utf8');
+  assert(html.startsWith('<!doctype html>'), 'HTML になっていない');
+  // 外から読み込むものが 1 つも無いこと
+  assert(!/<script[^>]+src=/i.test(html), '外部スクリプトの読み込みがある');
+  assert(!/<link[^>]+href="http/i.test(html), '外部スタイルの読み込みがある');
+  assert(!/<(video|source|img)[^>]+src="(?!data:)[^"]*\.(mp4|webm|png|jpg)/i.test(html), '動画を外部ファイルから読んでいる');
+  assert(html.includes("connect-src 'none'"), '通信禁止の指定がない');
+});
+
+await check('通信できない状態でも、2 本とも再生できる', async () => {
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await ctx2.setOffline(true);
+  const m = await ctx2.newPage();
+  // blob: と data: はこのファイル自身の中身なので、外部通信ではない
+  const outside = [];
+  m.on('request', (r) => {
+    const u = r.url();
+    if (!u.startsWith('file://') && !u.startsWith('blob:') && !u.startsWith('data:')) outside.push(u);
+  });
+  const merr = [];
+  m.on('pageerror', (e) => merr.push(e.message));
+  await m.goto(`file://${MANUAL}`);
+  await m.waitForSelector('.poster');
+  assert((await m.locator('.player').count()) === 2, '動画の枠が 2 つない');
+
+  for (const id of ['v1', 'v2']) {
+    await m.click(`.poster[data-for="${id}"]`);
+    await m.waitForSelector(`#p-${id} video`, { timeout: 60000 });
+    const v = m.locator(`#p-${id} video`);
+    // CSP で eval を禁じているため waitForFunction は使えない
+    const poll = async (fn, msg, t = 60000) => {
+      const end = Date.now() + t;
+      for (;;) {
+        if (await v.evaluate(fn)) return;
+        if (Date.now() > end) throw new Error(msg);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    };
+    await poll((el) => el.readyState >= 2, `${id}: 動画を読み込めない`);
+    const info = await v.evaluate((el) => ({ w: el.videoWidth, d: Math.round(el.duration), blob: el.src.startsWith('blob:') }));
+    assert(info.w > 0 && info.d > 60, `${id}: 動画の中身がおかしい (${JSON.stringify(info)})`);
+    assert(info.blob, `${id}: ファイル内から再生していない`);
+    await poll((el) => el.currentTime > 1, `${id}: 再生が進まない`, 30000);
+    // 途中まで飛べること (通しで見られること)
+    await v.evaluate((el) => { el.currentTime = el.duration * 0.7; });
+    await poll((el) => el.currentTime > 100, `${id}: 途中へ飛べない`, 30000);
+  }
+  assert(outside.length === 0, `外部へ ${outside.length} 件通信した: ${outside[0]}`);
+  assert(merr.length === 0, `JS エラー: ${merr[0]}`);
+  await ctx2.close();
 });
 
 console.log('\n\x1b[1m持ち出しの検証 (受け取り側の記録で確認)\x1b[0m');

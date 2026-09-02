@@ -46,6 +46,13 @@
       }
       .lead p { margin: 0 0 8px; }
       .lead p:last-child { margin-bottom: 0; }
+      .take { background: #fff; border: 1px solid var(--line); border-left: 5px solid #b8860b;
+        border-radius: 6px; padding: 18px 20px; margin: 0 0 30px; display: flex; gap: 22px;
+        align-items: center; flex-wrap: wrap; justify-content: space-between; }
+      .take .btn { display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+        background: var(--green); color: #fff; text-decoration: none; font-weight: 700;
+        padding: 13px 24px; border-radius: 6px; white-space: nowrap; }
+      .take .btn span { font-weight: 400; font-size: 12px; opacity: .85; }
       section { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 22px 24px 26px; margin-bottom: 30px; }
       h2 { margin: 0 0 4px; font-size: 19px; color: var(--green-dark); }
       .meta { color: var(--dim); font-size: 13px; margin: 0 0 16px; }
@@ -81,11 +88,28 @@
         </p>
       </div>
 
+      <div class="take">
+        <div>
+          <h2 style="margin:0 0 6px">共有フォルダーに置いて、オフラインで見る</h2>
+          <p style="margin:0">
+            <b>動画が入った説明書を 1 ファイルで持ち出せます。</b>
+            ツール本体と一緒に共有フォルダーへ置けば、<b>ネットワークにつながっていなくても</b>
+            ダブルクリックで開いて再生できます。
+          </p>
+        </div>
+        <a class="btn" href="manual-offline.html" download="操作説明（動画つき）.html">
+          ⬇ 動画つき説明書を保存<span>1 ファイル・約 11MB</span>
+        </a>
+      </div>
+
       <section>
         <h2>① 黄色い入力欄だけ入力できるようにする</h2>
-        <p class="meta">5 分 38 秒 ／ 1920×1080</p>
-        <video src="videos/lock-by-color.mp4" controls preload="metadata" playsinline></video>
-        <p class="dl"><a href="videos/lock-by-color.mp4" download>動画をダウンロード (MP4・約 11MB)</a></p>
+        <p class="meta">5 分 38 秒 ／ 1600×900</p>
+        <video controls preload="metadata" playsinline>
+          <source src="videos/lock-by-color.webm" type="video/webm" />
+          <source src="videos/lock-by-color.mp4" type="video/mp4" />
+        </video>
+        <p class="dl"><a href="videos/lock-by-color.mp4" download>この動画だけダウンロード (MP4・約 4MB)</a></p>
         <h3>この動画で分かること</h3>
         <ol class="steps">
           <li>ダウンロードした HTML をダブルクリックして開く</li>
@@ -100,9 +124,12 @@
 
       <section>
         <h2>② 年度をまとめて 1 年進める</h2>
-        <p class="meta">6 分 00 秒 ／ 1920×1080</p>
-        <video src="videos/year-update.mp4" controls preload="metadata" playsinline></video>
-        <p class="dl"><a href="videos/year-update.mp4" download>動画をダウンロード (MP4・約 12MB)</a></p>
+        <p class="meta">6 分 00 秒 ／ 1600×900</p>
+        <video controls preload="metadata" playsinline>
+          <source src="videos/year-update.webm" type="video/webm" />
+          <source src="videos/year-update.mp4" type="video/mp4" />
+        </video>
+        <p class="dl"><a href="videos/year-update.mp4" download>この動画だけダウンロード (MP4・約 4MB)</a></p>
         <h3>この動画で分かること</h3>
         <ol class="steps">
           <li>2023・2024 年度の実績はロック済み、2025 年度の記入欄だけ黄色、という状態から始める</li>

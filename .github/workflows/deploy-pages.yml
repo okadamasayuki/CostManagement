@@ -3,7 +3,8 @@
 # 公開されるのは次の 3 つだけ。ソースや node_modules は Pages に載らない。
 #   /              … dist/index.html (全てを同梱した単一ファイル)
 #   /videos.html   … 操作の動画の一覧ページ
-#   /videos/*.mp4  … 操作の動画
+#   /videos/*      … 操作の動画 (webm / mp4)
+#   /manual-offline.html … 動画を埋め込んだ説明書 (共有フォルダー用の 1 ファイル)
 #
 # 【初回のみ手動設定が必要】
 #   リポジトリの Settings → Pages → Build and deployment → Source を
@@ -60,7 +61,9 @@ jobs:
           cp dist/index.html _site/index.html
           # 操作の動画と、その一覧ページ
           cp site/videos.html _site/videos.html
-          cp docs/videos/*.mp4 _site/videos/
+          cp docs/videos/*.mp4 docs/videos/*.webm _site/videos/
+          # 共有フォルダーへ持ち出せる「動画つき説明書」(1 ファイル)
+          node tools/demo/build-manual.mjs _site/manual-offline.html
           # Jekyll の処理を通さない (この HTML をそのまま配信する)
           touch _site/.nojekyll
           ls -la _site _site/videos
