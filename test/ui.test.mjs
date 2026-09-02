@@ -167,6 +167,30 @@ await check('ファイル未読み込み時の案内が出る', async () => {
   assert(await page.isVisible('.grid-placeholder'), 'プレースホルダが見えない');
 });
 
+console.log('\n\x1b[1m適用先バー\x1b[0m');
+
+await check('ファイル未読み込みでも、適用先バーが場所を取りすぎない', async () => {
+  /**
+   * リボンの下に足したとき、画面全体のグリッドの行数を直し忘れて
+   * バーが余白を全部吸い込み、500px の帯になっていたことがある。
+   * 見た目の崩れはテストで気付きにくいので、高さを直接見る。
+   */
+  const h = await page.locator('.scopebar').evaluate((el) => el.getBoundingClientRect().height);
+  assert(h > 20 && h < 70, `適用先バーの高さが ${Math.round(h)}px (20〜70px のはず)`);
+});
+
+await check('適用先は 1 か所だけで、どのタブでも同じものが出る', async () => {
+  // タブごとに置くと「タブごとに別物なのか」が分からなくなるため、1 つに統一している
+  for (const t of await page.locator('.ribbon-tab').allTextContents()) {
+    await page.click(`.ribbon-tab:has-text("${t}")`);
+    const inBar = await page.locator('.scopebar [data-testid="scope-books"]').count();
+    const total = await page.locator('[data-testid="scope-books"]').count();
+    assert(inBar === 1, `「${t}」タブで適用先バーの選択肢が ${inBar} 個`);
+    assert(total === 1, `「${t}」タブに適用先が ${total} 個ある (1 つのはず)`);
+  }
+  await page.click('.ribbon-tab:has-text("ファイル")');
+});
+
 console.log('\n\x1b[1mファイルの読み込み\x1b[0m');
 
 await check('フォルダーを指定するとサブフォルダーの Excel も全部読み込まれる', async () => {
@@ -196,6 +220,13 @@ await check('グリッドにセルの内容が描画される', async () => {
 await check('シートタブが 3 枚出る', async () => {
   const n = await page.locator('.sheettab').count();
   assert(n === 3, `タブ数が ${n}`);
+});
+
+await check('読み込んだあとも適用先バーの高さは変わらない', async () => {
+  const h = await page.locator('.scopebar').evaluate((el) => el.getBoundingClientRect().height);
+  assert(h > 20 && h < 70, `適用先バーの高さが ${Math.round(h)}px`);
+  const text = await page.textContent('.scopebar');
+  assert(/ブック/.test(text) && /シート/.test(text), `適用先の表示: ${text}`);
 });
 
 await page.screenshot({ path: join(SHOTS, '01-loaded.png') });

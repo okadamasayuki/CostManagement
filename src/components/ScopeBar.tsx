@@ -23,20 +23,17 @@ export function ScopeBar() {
       <div className="sb-fields">
         <ScopeSelector scope={s.scope} onChange={(scope) => setState({ scope })} inline />
       </div>
-      <span className="sb-count">
+      <span className="sb-count" title={describeScope(s.scope)}>
         {ready ? (
           <>
-            <b>{n.books}</b> ブック / <b>{n.sheets}</b> シート が対象
+            <b>{n.books}</b> ブック / <b>{n.sheets}</b> シート
           </>
         ) : (
-          'ファイルを読み込むと対象が出ます'
+          'ファイル未読み込み'
         )}
       </span>
       <span className="sb-note">
-        ロック・書式・年度更新など<b>すべての操作</b>で、ここの指定が使われます
-      </span>
-      <span className="sb-desc" title={describeScope(s.scope)}>
-        {describeScope(s.scope)}
+        ロック・書式・年度更新など<b>すべての操作</b>で使われます
       </span>
     </div>
   );
